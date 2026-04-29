@@ -48,31 +48,6 @@ A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420
 └─────────────────────────────────────────────────┘
 ```
 
-## Conformance Levels
-
-| Level | Requirements |
-|-------|-------------|
-| **WMP Basic** | JSON-RPC 2.0 envelope, session lifecycle, message delivery |
-| **WMP Secure** | WMP Basic + MLS encryption |
-| **WMP Flows** | WMP Basic + structured flow orchestration |
-| **WMP Agent** | WMP Basic + MCP-compatible tool/resource access |
-| **WMP Registered** | WMP Secure + evidence profile, non-repudiation, trusted timestamps |
-| **WMP Wallet** | WMP Secure + WMP Flows + OpenID4x profile (OID4VCI, OID4VP) |
-
-## Comparison
-
-| | AS4 | DIDComm 2.1 | WMP |
-|---|---|---|---|
-| Wire format | SOAP/XML | JOSE/COSE envelopes | JSON-RPC 2.0 |
-| Multi-party encryption | S/MIME | Per-recipient JOSE | MLS (O(n) scaling) |
-| Transport | HTTP | HTTP, WS, BLE | WS, HTTP, Native |
-| MCP compatible | No | No | Yes |
-| Real-time | No | Partial | Yes |
-| Non-repudiation | S/MIME signatures | Standalone | Detached JWS/COSE |
-| ERDS evidence | Built-in (ebMS) | Not specified | Evidence profile |
-| PQC readiness | Requires new XML-DSIG | Requires new JOSE | MLS cipher suite swap |
-| Spec complexity | Very high | High | Low |
-
 ## Status
 
 **Draft** — This is an early-stage specification. Feedback welcome.
