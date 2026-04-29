@@ -542,6 +542,8 @@ Implementations MAY also use RFC 9162 (Certificate Transparency) signed timestam
 
 WMP identifiers (DIDs, X.509 fingerprints, etc.) are cryptographic identifiers that do not inherently bind to a legal identity. For scenarios requiring legal person identification (e.g., eIDAS ERDS, regulatory compliance), the `identity_assertions` field carries verifiable bindings between the cryptographic identifier and a legal identity.
 
+Each identity assertion has a `type` indicating the credential format, and an optional `trust_hints` array. Trust hints are **suggestions from the sender** indicating trust frameworks under which the credential *may* be verifiable. The relying party (RP) is never obligated to follow a hint — the RP's local trust policy always determines which frameworks are acceptable and how credentials are validated.
+
 ```json
 {
   "wmp": {
@@ -552,7 +554,19 @@ WMP identifiers (DIDs, X.509 fingerprints, etc.) are cryptographic identifiers t
       {
         "type": "verifiable_credential",
         "format": "vc+sd-jwt",
-        "credential": "eyJ..."
+        "credential": "eyJ...",
+        "trust_hints": [
+          {
+            "framework": "eidas_lote",
+            "lote_url": "https://eidas.ec.europa.eu/efda/tl/browser/",
+            "issuer_service_id": "urn:uuid:..."
+          },
+          {
+            "framework": "openid_federation",
+            "trust_anchor": "https://federation.example.eu",
+            "entity_statement": "eyJ..."
+          }
+        ]
       }
     ]
   }
@@ -563,12 +577,33 @@ WMP identifiers (DIDs, X.509 fingerprints, etc.) are cryptographic identifiers t
 
 | Type | Description |
 |------|-------------|
-| `verifiable_credential` | A Verifiable Credential binding the sender's identifier to legal identity claims. Fields: `format` (credential format), `credential` (the VC). |
-| `x509_chain` | An X.509 certificate chain binding the sender's key to a legal identity via a qualified CA. Fields: `certificates` (base64-encoded DER chain). |
-| `openid_federation_chain` | An OpenID Federation entity statement chain. Fields: `statements` (array of signed JWTs). |
-| `eidas_attestation` | An eIDAS electronic attestation of attributes. Fields: `attestation` (the signed attestation). |
+| `verifiable_credential` | A Verifiable Credential (W3C VCDM, ISO mdoc, etc.) binding the sender's identifier to identity claims. Fields: `format` (credential format, e.g., `vc+sd-jwt`, `mso_mdoc`), `credential` (the encoded credential). |
+| `x509_chain` | An X.509 certificate chain binding the sender's key to an identity via a CA. Fields: `certificates` (base64-encoded DER chain). |
 
-Identity assertions are OPTIONAL in WMP Core. Profiles MAY mandate specific assertion types. For example, an ERDS profile would require `x509_chain` with eIDAS-qualified certificates, or `verifiable_credential` issued by a qualified trust service provider.
+#### 5.6.1 Trust Hints
+
+The `trust_hints` array is OPTIONAL. Each entry is a **hint** suggesting a trust framework and providing enough information for the RP to efficiently locate and execute the corresponding validation path. The RP decides independently whether to act on any given hint.
+
+A hint is actionable when it provides the RP with a concrete starting point for validation. Each framework type defines the fields that make a hint actionable:
+
+| Framework | Description | Actionable fields |
+|-----------|-------------|-------------------|
+| `eidas_lote` | eIDAS Trusted List. | `lote_url` — URL of the LoTE/LoTL to search. `issuer_service_id` — the service identifier of the issuer within the list (optional; speeds lookup). |
+| `openid_federation` | OpenID Federation trust chain. | `trust_anchor` — entity ID of the trust anchor. `entity_statement` — pre-fetched subordinate statement JWT (optional; avoids discovery round-trip). |
+| `x509_pki` | X.509 PKI validation. | `root_ca` — issuer DN or SKI of the expected root CA (optional; narrows trust store search). |
+| `domestic` | National or sector-specific framework. | `uri` — framework identifier URI. `validation_endpoint` — URL of a status/validation service (optional). |
+
+**RP processing model:**
+
+1. The RP receives an identity assertion with zero or more `trust_hints`.
+2. The RP compares each hint's `framework` against its local trust policy. Hints referencing frameworks the RP does not support are silently ignored.
+3. For each accepted framework, the RP uses the hint's fields as a starting point for validation (e.g., fetching the referenced LoTE and checking whether the credential issuer appears as a trusted service).
+4. The RP MAY validate the credential under a framework *not* listed in the hints, if the RP's own policy and configuration support it.
+5. If no hint matches the RP's policy and the RP cannot independently determine a trust path, the assertion SHOULD be treated as untrusted.
+
+When `trust_hints` is absent, the RP determines the applicable trust model entirely from local policy and the credential content itself.
+
+Identity assertions are OPTIONAL in WMP Core. Profiles MAY mandate specific assertion types and require that certain trust hints be present. For example, an ERDS profile could require `verifiable_credential` with at least one `eidas_lote` hint referencing a LoTE published under the EU Trusted List framework.
 
 Identity assertions MAY be sent once during session creation and are then valid for the session lifetime, or MAY be attached to individual messages when per-message identity binding is required.
 
