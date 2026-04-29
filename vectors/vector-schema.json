@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WMP Test Vector",
+  "description": "A single input/expected-output pair for WMP conformance testing.",
+  "type": "object",
+  "required": ["id", "description", "conformance_level", "input"],
+  "properties": {
+    "id": { "type": "string" },
+    "description": { "type": "string" },
+    "conformance_level": {
+      "type": "string",
+      "enum": ["basic", "secure", "flows", "agent", "registered", "wallet"]
+    },
+    "input": { "description": "The JSON-RPC message to send." },
+    "expected_response": { "description": "The expected JSON-RPC response (if request)." },
+    "expected_error": { "$ref": "../schema/wmp-error.json", "description": "Expected error response." },
+    "notes": { "type": "string" }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/leifj/wmp/schema/wmp-signature.json",
+  "title": "WMP Signature Object",
+  "description": "Non-repudiation signature over message content.",
+  "type": "object",
+  "required": ["alg", "kid", "value"],
+  "properties": {
+    "alg": {
+      "type": "string",
+      "description": "Signature algorithm (JWA identifier).",
+      "enum": ["EdDSA", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512"]
+    },
+    "kid": {
+      "type": "string",
+      "description": "Key identifier — URI referencing the verification key."
+    },
+    "value": {
+      "type": "string",
+      "description": "Base64url-encoded detached signature over canonical message content."
+    },
+    "x5c": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "X.509 certificate chain (base64-encoded DER)."
+    }
+  },
+  "additionalProperties": false
+}

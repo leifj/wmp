@@ -1,0 +1,68 @@
+[
+  {
+    "id": "capability-update-add-relay",
+    "description": "Add relay capability and upgrade to mls-optional mid-session.",
+    "conformance_level": "secure",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "cap-update-1",
+      "method": "wmp.capability.update",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4",
+          "sender": "did:web:alice.example.com"
+        },
+        "add": {
+          "relay": { "destinations": ["did:web:carol.example.com"] }
+        },
+        "remove": ["oid4vp"],
+        "security": {
+          "mode": "mls-optional",
+          "cipher_suites": [1],
+          "encrypted_capabilities": ["relay"]
+        }
+      }
+    },
+    "expected_response": {
+      "jsonrpc": "2.0",
+      "id": "cap-update-1",
+      "result": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4"
+        },
+        "capabilities": {
+          "messaging": { "max_size": 65536 },
+          "flows": { "max_concurrent": 5 },
+          "relay": { "destinations": ["did:web:carol.example.com"] }
+        },
+        "security": {
+          "mode": "mls-optional",
+          "cipher_suite": 1,
+          "encrypted_capabilities": ["relay"],
+          "mls_group_info": "*"
+        }
+      }
+    },
+    "notes": "oid4vp removed from capabilities. relay added with MLS encryption required."
+  },
+  {
+    "id": "session-close-complete",
+    "description": "Close a session normally.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "method": "wmp.session.close",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4",
+          "sender": "did:web:alice.example.com"
+        },
+        "reason": "complete"
+      }
+    },
+    "notes": "Notification — no response expected. All participants should tear down session state."
+  }
+]

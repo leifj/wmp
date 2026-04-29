@@ -1,0 +1,121 @@
+[
+  {
+    "id": "flow-approval-full-lifecycle",
+    "description": "Complete approval flow: start → progress → action → complete.",
+    "conformance_level": "flows",
+    "input": [
+      {
+        "step": "initiator sends flow.start",
+        "message": {
+          "jsonrpc": "2.0",
+          "id": "flow-001",
+          "method": "wmp.flow.start",
+          "params": {
+            "wmp": {
+              "version": "0.1",
+              "session_id": "ses-a1b2c3d4",
+              "sender": "did:web:alice.example.com"
+            },
+            "flow_type": "approval",
+            "flow_id": "flow-7890",
+            "params": {
+              "subject": "Document review request",
+              "body": "Please review and approve the attached.",
+              "attachments": [
+                {
+                  "content_type": "application/pdf",
+                  "uri": "https://example.com/doc/123"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "step": "responder sends flow.progress",
+        "message": {
+          "jsonrpc": "2.0",
+          "method": "wmp.flow.progress",
+          "params": {
+            "wmp": {
+              "version": "0.1",
+              "session_id": "ses-a1b2c3d4"
+            },
+            "flow_id": "flow-7890",
+            "step": "awaiting_review",
+            "payload": {
+              "reviewer": "did:web:bob.example.com",
+              "deadline": "2026-05-01T00:00:00Z"
+            }
+          }
+        }
+      },
+      {
+        "step": "participant sends flow.action",
+        "message": {
+          "jsonrpc": "2.0",
+          "id": "action-001",
+          "method": "wmp.flow.action",
+          "params": {
+            "wmp": {
+              "version": "0.1",
+              "session_id": "ses-a1b2c3d4",
+              "sender": "did:web:bob.example.com"
+            },
+            "flow_id": "flow-7890",
+            "action": "approve",
+            "params": {
+              "comment": "Looks good."
+            }
+          }
+        }
+      },
+      {
+        "step": "responder sends flow.complete",
+        "message": {
+          "jsonrpc": "2.0",
+          "method": "wmp.flow.complete",
+          "params": {
+            "wmp": {
+              "version": "0.1",
+              "session_id": "ses-a1b2c3d4"
+            },
+            "flow_id": "flow-7890",
+            "result": {
+              "approved": true,
+              "approver": "did:web:bob.example.com",
+              "timestamp": "2026-04-29T14:30:00Z"
+            }
+          }
+        }
+      }
+    ],
+    "notes": "Multi-step vector. Process messages in order. Each message is either a request (has id) or notification (no id)."
+  },
+  {
+    "id": "flow-sign-generate-proof",
+    "description": "Sign flow requesting proof generation.",
+    "conformance_level": "flows",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "sign-001",
+      "method": "wmp.flow.start",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4",
+          "sender": "did:web:issuer.example.com"
+        },
+        "flow_type": "sign",
+        "flow_id": "flow-sign-001",
+        "params": {
+          "action": "generate_proof",
+          "nonce": "n-0S6_WzA2Mj",
+          "audience": "https://example.com",
+          "proof_type": "jwt"
+        }
+      }
+    },
+    "notes": "The wallet should respond with a flow.complete containing the generated proof JWT."
+  }
+]

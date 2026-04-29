@@ -1,0 +1,133 @@
+[
+  {
+    "id": "session-create-basic-tls",
+    "description": "Create a session with TLS-only security and messaging capability.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "msg-001",
+      "method": "wmp.session.create",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "sender": "did:web:alice.example.com"
+        },
+        "participants": ["did:web:bob.example.com"],
+        "capabilities_offered": {
+          "messaging": { "max_size": 65536 }
+        },
+        "security": { "mode": "tls" },
+        "ttl": 3600
+      }
+    },
+    "expected_response": {
+      "jsonrpc": "2.0",
+      "id": "msg-001",
+      "result": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-*"
+        },
+        "capabilities": {
+          "messaging": { "max_size": 65536 }
+        },
+        "security": { "mode": "tls" }
+      }
+    },
+    "notes": "session_id in response is server-generated. '*' means any valid session ID matching ^ses-[a-zA-Z0-9]+$."
+  },
+  {
+    "id": "session-create-mls",
+    "description": "Create a session with MLS encryption.",
+    "conformance_level": "secure",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "msg-002",
+      "method": "wmp.session.create",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "sender": "did:web:alice.example.com"
+        },
+        "participants": ["did:web:bob.example.com"],
+        "capabilities_offered": {
+          "messaging": { "max_size": 65536 },
+          "flows": { "max_concurrent": 5 }
+        },
+        "security": {
+          "mode": "mls",
+          "cipher_suites": [1, 2]
+        },
+        "ttl": 3600
+      }
+    },
+    "expected_response": {
+      "jsonrpc": "2.0",
+      "id": "msg-002",
+      "result": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-*"
+        },
+        "capabilities": {
+          "messaging": { "max_size": 65536 },
+          "flows": { "max_concurrent": 5 }
+        },
+        "security": {
+          "mode": "mls",
+          "cipher_suite": 1,
+          "mls_group_info": "*"
+        }
+      }
+    },
+    "notes": "Responder selects cipher_suite from offered list. mls_group_info is base64url-encoded MLS GroupInfo."
+  },
+  {
+    "id": "session-create-mls-optional",
+    "description": "Create an mls-optional session with encrypted_capabilities.",
+    "conformance_level": "secure",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "msg-003",
+      "method": "wmp.session.create",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "sender": "did:web:alice.example.com"
+        },
+        "participants": ["did:web:bob.example.com"],
+        "capabilities_offered": {
+          "messaging": { "max_size": 65536 },
+          "relay": { "destinations": ["did:web:carol.example.com"] }
+        },
+        "security": {
+          "mode": "mls-optional",
+          "cipher_suites": [1],
+          "encrypted_capabilities": ["relay"]
+        },
+        "ttl": 3600
+      }
+    },
+    "expected_response": {
+      "jsonrpc": "2.0",
+      "id": "msg-003",
+      "result": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-*"
+        },
+        "capabilities": {
+          "messaging": { "max_size": 65536 },
+          "relay": { "destinations": ["did:web:carol.example.com"] }
+        },
+        "security": {
+          "mode": "mls-optional",
+          "cipher_suite": 1,
+          "encrypted_capabilities": ["relay"],
+          "mls_group_info": "*"
+        }
+      }
+    },
+    "notes": "relay messages MUST be MLS-encrypted; messaging uses TLS only."
+  }
+]

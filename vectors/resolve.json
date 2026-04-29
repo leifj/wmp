@@ -1,0 +1,104 @@
+[
+  {
+    "id": "resolve-vctm",
+    "description": "Resolve VCTM metadata for a credential type URI.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "res-001",
+      "method": "wmp.resolve",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4"
+        },
+        "type": "vctm",
+        "uri": "https://credentials.example.com/identity"
+      }
+    },
+    "expected_response": {
+      "jsonrpc": "2.0",
+      "id": "res-001",
+      "result": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4"
+        },
+        "type": "vctm",
+        "uri": "https://credentials.example.com/identity",
+        "metadata": {
+          "vct": "https://credentials.example.com/identity",
+          "name": "National ID Card",
+          "description": "Government-issued identity credential",
+          "display": { "name": "National ID", "locale": "en" },
+          "claims": [
+            { "path": ["given_name"], "display": { "name": "First name" } },
+            { "path": ["family_name"], "display": { "name": "Last name" } }
+          ]
+        },
+        "trust_info": {
+          "trusted": true,
+          "source": "registry"
+        }
+      }
+    }
+  },
+  {
+    "id": "resolve-not-found",
+    "description": "Resolve returns null metadata when URI is unknown.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "res-002",
+      "method": "wmp.resolve",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4"
+        },
+        "type": "vctm",
+        "uri": "https://unknown.example.com/nonexistent"
+      }
+    },
+    "expected_response": {
+      "jsonrpc": "2.0",
+      "id": "res-002",
+      "result": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4"
+        },
+        "type": "vctm",
+        "uri": "https://unknown.example.com/nonexistent",
+        "metadata": null
+      }
+    }
+  },
+  {
+    "id": "resolve-unsupported-type",
+    "description": "Resolve returns error for unsupported resolution type.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "res-003",
+      "method": "wmp.resolve",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-a1b2c3d4"
+        },
+        "type": "smp",
+        "uri": "ebcore:iso6523:0088:1234567890"
+      }
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "res-003",
+      "error": {
+        "code": -31005,
+        "message": "Resolution type not supported",
+        "data": { "type": "smp" }
+      }
+    }
+  }
+]

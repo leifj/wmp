@@ -1,0 +1,111 @@
+[
+  {
+    "id": "error-session-not-found",
+    "description": "Message referencing a nonexistent session.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "msg-err-001",
+      "method": "wmp.message.deliver",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-nonexistent",
+          "sender": "did:web:alice.example.com"
+        },
+        "to": ["did:web:bob.example.com"],
+        "content_type": "text/plain",
+        "body": "Hello"
+      }
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "msg-err-001",
+      "error": {
+        "code": -31000,
+        "message": "Session not found"
+      }
+    }
+  },
+  {
+    "id": "error-encryption-required",
+    "description": "Unencrypted message for a capability in encrypted_capabilities.",
+    "conformance_level": "secure",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "msg-err-002",
+      "method": "wmp.message.deliver",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-mls-opt-001",
+          "sender": "did:web:alice.example.com"
+        },
+        "to": ["did:web:carol.example.com"],
+        "content_type": "application/json",
+        "body": { "relay_target": "did:web:dave.example.com" }
+      }
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "msg-err-002",
+      "error": {
+        "code": -31003,
+        "message": "Encryption required",
+        "data": { "capability": "relay" }
+      }
+    },
+    "notes": "Assumes relay is in encrypted_capabilities for this session. Message arrived without wmp.encrypted=true."
+  },
+  {
+    "id": "error-capability-not-supported",
+    "description": "Request using a capability not negotiated for the session.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "flow-err-001",
+      "method": "wmp.flow.start",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-basic-001",
+          "sender": "did:web:alice.example.com"
+        },
+        "flow_type": "oid4vci",
+        "flow_id": "flow-err-001",
+        "params": {}
+      }
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "flow-err-001",
+      "error": {
+        "code": -31005,
+        "message": "Capability not supported",
+        "data": { "capability": "oid4vci" }
+      }
+    },
+    "notes": "Session was created without oid4vci capability."
+  },
+  {
+    "id": "error-method-not-found",
+    "description": "Unknown method invocation.",
+    "conformance_level": "basic",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "msg-err-003",
+      "method": "wmp.nonexistent.method",
+      "params": {
+        "wmp": { "version": "0.1", "session_id": "ses-a1b2c3d4" }
+      }
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "msg-err-003",
+      "error": {
+        "code": -32601,
+        "message": "Method not found"
+      }
+    }
+  }
+]

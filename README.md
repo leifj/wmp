@@ -52,6 +52,17 @@ A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420
 
 **Draft** — This is an early-stage specification. Feedback welcome.
 
+## Machine-Readable Artifacts
+
+| Directory | Description |
+|-----------|-------------|
+| [schema/](schema/) | JSON Schema (Draft 2020-12) for all message types and metadata objects |
+| [schema/methods/](schema/methods/) | Per-method request/response schemas |
+| [vectors/](vectors/) | Test vectors — input/expected-output pairs for conformance testing |
+
+These artifacts are designed for AI coding agents and automated tooling. Validate
+your implementation against the schemas, then run the test vectors.
+
 ## License
 
 TBD

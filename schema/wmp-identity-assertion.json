@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/leifj/wmp/schema/wmp-identity-assertion.json",
+  "title": "WMP Identity Assertion",
+  "description": "A verifiable binding between a cryptographic identifier and a legal identity.",
+  "type": "object",
+  "required": ["type"],
+  "oneOf": [
+    {
+      "properties": {
+        "type": { "const": "verifiable_credential" },
+        "format": {
+          "type": "string",
+          "description": "Credential format identifier.",
+          "examples": ["vc+sd-jwt", "mso_mdoc", "jwt_vc_json", "ldp_vc"]
+        },
+        "credential": {
+          "type": "string",
+          "description": "The encoded credential."
+        },
+        "trust_hints": {
+          "type": "array",
+          "items": { "$ref": "wmp-trust-hint.json" }
+        }
+      },
+      "required": ["type", "format", "credential"]
+    },
+    {
+      "properties": {
+        "type": { "const": "x509_chain" },
+        "certificates": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Base64-encoded DER certificate chain."
+        },
+        "trust_hints": {
+          "type": "array",
+          "items": { "$ref": "wmp-trust-hint.json" }
+        }
+      },
+      "required": ["type", "certificates"]
+    }
+  ]
+}
