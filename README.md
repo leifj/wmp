@@ -23,7 +23,7 @@ A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420
 
 | Profile | Description |
 |---------|-------------|
-| [spec/wmp-openid4x.md](spec/wmp-openid4x.md) | OID4VCI, OID4VP, and VCTM flow definitions |
+| [spec/wmp-openid4x.md](spec/wmp-openid4x.md) | OID4VCI and OID4VP flow definitions |
 | [spec/wmp-evidence.md](spec/wmp-evidence.md) | Delivery evidence and receipts for registered delivery (ERDS) |
 | [spec/wmp-edelivery.md](spec/wmp-edelivery.md) | eDelivery integration: SMP/BDXL discovery, ebCore identifiers, AS4 coexistence |
 

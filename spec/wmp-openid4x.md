@@ -8,7 +8,9 @@
 
 ## 1. Introduction
 
-This document defines the WMP profile for OpenID for Verifiable Credential Issuance (OID4VCI), OpenID for Verifiable Presentations (OID4VP), and Verifiable Credential Type Metadata (VCTM) flows. It specifies the capabilities, flow types, step identifiers, and action identifiers required to run these protocols over WMP.
+This document defines the WMP profile for OpenID for Verifiable Credential Issuance (OID4VCI) and OpenID for Verifiable Presentations (OID4VP) flows. It specifies the capabilities, flow types, step identifiers, and action identifiers required to run these protocols over WMP.
+
+Verifiable Credential Type Metadata (VCTM) resolution is handled by the generic `wmp.resolve` mechanism defined in WMP Core Section 5.8, using resolution type `vctm`.
 
 This profile builds on [WMP Core](wmp-core.md) Section 6 (Structured Flows) and Section 6.5 (Profile-Defined Flow Types).
 
@@ -24,7 +26,8 @@ This profile defines the following capabilities for use in `wmp.session.create` 
 |-----------|-------------|------------|
 | `oid4vci` | OID4VCI credential issuance flows | `supported_grants`: grant types, `supported_formats`: credential formats |
 | `oid4vp` | OID4VP verifiable presentation flows | `supported_response_modes`: response modes, `supported_formats`: credential formats |
-| `vctm` | Verifiable Credential Type Metadata resolution | `supported_sources`: metadata source types |
+
+Implementations that need VCTM resolution SHOULD also negotiate the `resolve` capability (WMP Core Section 5.8) with `"vctm"` in `supported_types`.
 
 ### 2.1 `oid4vci` Capability
 
@@ -68,24 +71,6 @@ This profile defines the following capabilities for use in `wmp.session.create` 
     "supported_response_modes": ["direct_post", "dc_api"],
     "supported_formats": ["vc+sd-jwt", "mso_mdoc"],
     "supported_algorithms": ["ES256", "EdDSA"]
-  }
-}
-```
-
-### 2.3 `vctm` Capability
-
-**Parameters:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `supported_sources` | string[] | Metadata source types: `uri`, `registry`, `trust_list` |
-
-**Example:**
-
-```json
-{
-  "vctm": {
-    "supported_sources": ["uri", "registry"]
   }
 }
 ```
@@ -335,35 +320,10 @@ The `parent_flow_id` field links the sign flow to the parent OID4VCI flow. The s
 | `presentation_submission` | object | Presentation submission descriptor |
 | `response_code` | string | Response code from verifier (if applicable) |
 
-### 3.3 `vctm` Flow — Credential Type Metadata
-
-#### 3.3.1 Start Parameters
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `vct` | string | REQUIRED | Verifiable Credential Type URI |
-| `source` | string | OPTIONAL | Preferred metadata source: `uri`, `registry`, `trust_list` |
-
-#### 3.3.2 Progress Steps
-
-| Step | Description | Payload |
-|------|-------------|---------|
-| `resolving` | Resolving credential type metadata | — |
-| `resolved` | Metadata resolved | `metadata`: VCTM document |
-
-#### 3.3.3 Completion Result
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `metadata` | object | Resolved VCTM document |
-| `display` | object | Display metadata for the credential type |
-| `claims` | object[] | Claim definitions |
-| `trust_info` | object | Trust information for the metadata source |
-
 ## 4. Complete OID4VCI Flow Example
 
 ```
-wallet-frontend                    go-wallet-backend
+wallet                             orchestrator
       │                                    │
       │── wmp.session.create ─────────────>│
       │   {capabilities_offered:           │

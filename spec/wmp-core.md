@@ -159,8 +159,8 @@ Domains:
 - `wmp.message.*` — Message delivery
 - `wmp.capability.*` — Capability negotiation
 - `wmp.flow.*` — Structured flows (credential exchange, etc.)
+- `wmp.resolve.*` — Metadata resolution (see Section 5.8)
 - `wmp.mls.*` — MLS group management
-
 - `wmp.evidence.*` — Delivery evidence (see [wmp-evidence.md](wmp-evidence.md))
 
 Application-specific methods use their own namespace prefix (e.g., `wallet.*`, `oid4vci.*`).
@@ -276,8 +276,9 @@ Modeled after MCP's `initialize` handshake. The initiator offers capabilities; t
 | `mcp` | MCP-compatible tool/resource access | `tools`: bool, `resources`: bool, `prompts`: bool |
 | `relay` | Message relay to third parties | `destinations`: allowed destination patterns |
 | `offline` | Offline message queuing | `max_queued`: max queued messages, `ttl`: queue retention |
+| `resolve` | Metadata resolution (see Section 5.8) | `supported_types`: resolution types available |
 
-Additional capabilities are defined by profiles. For example, the OpenID4x profile ([wmp-openid4x.md](wmp-openid4x.md)) defines `oid4vci`, `oid4vp`, and `vctm` capabilities.
+Additional capabilities are defined by profiles. For example, the OpenID4x profile ([wmp-openid4x.md](wmp-openid4x.md)) defines `oid4vci` and `oid4vp` capabilities.
 
 #### 4.2.3 Security Mode Negotiation
 
@@ -530,13 +531,12 @@ The timestamp token MUST be an RFC 3161 `TimeStampToken` obtained from a trusted
 
 For EU regulatory contexts, the TSA SHOULD be a qualified trust service provider under eIDAS.
 
-Implementations MAY also use RFC 9162 (Certificate Transparency) signed timestamps or blockchain-anchored timestamps, encoded in the same field with a distinguishing prefix:
+Implementations MAY also use RFC 9162 (Certificate Transparency) signed timestamps, encoded in the same field with a distinguishing prefix:
 
 | Format | Prefix | Description |
 |--------|--------|-------------|
 | RFC 3161 | (none) | Standard TSA timestamp token |
 | RFC 9162 SCT | `sct:` | Signed Certificate Timestamp |
-| Blockchain anchor | `bc:` | Blockchain-anchored timestamp proof |
 
 ### 5.6 Identity Assertions
 
@@ -620,6 +620,109 @@ When messages traverse multiple WMP relays (the multi-hop equivalent of the ERDS
 | `service_class` | string | OPTIONAL | Service class: `best_effort`, `standard`, `registered`, `certified` |
 
 Each relay in the chain SHOULD append its entry before forwarding. The `signature` field in each entry allows recipients to verify relay provenance independently. When the `evidence` capability is active (see [wmp-evidence.md](wmp-evidence.md)), relays MUST sign their entries.
+
+### 5.8 Metadata Resolution
+
+WMP defines a generic metadata resolution mechanism via `wmp.resolve`. This is a simple request/response method — not a flow — for looking up metadata about identifiers, credential types, trust relationships, and endpoints.
+
+The `resolve` capability MUST be negotiated during session creation to use resolve methods.
+
+#### 5.8.1 `wmp.resolve`
+
+**Request:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "res-001",
+  "method": "wmp.resolve",
+  "params": {
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+    "type": "vctm",
+    "uri": "https://credentials.example.com/identity"
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "res-001",
+  "result": {
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+    "type": "vctm",
+    "uri": "https://credentials.example.com/identity",
+    "metadata": {
+      "vct": "https://credentials.example.com/identity",
+      "name": "National ID Card",
+      "description": "Government-issued identity credential",
+      "display": { "name": "National ID", "locale": "en" },
+      "claims": [
+        {"path": ["given_name"], "display": {"name": "First name"}},
+        {"path": ["family_name"], "display": {"name": "Last name"}}
+      ]
+    },
+    "trust_info": {
+      "trusted": true,
+      "source": "registry"
+    }
+  }
+}
+```
+
+**Request fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | REQUIRED | Resolution type (see below) |
+| `uri` | string | REQUIRED | Identifier or URI to resolve |
+| `options` | object | OPTIONAL | Type-specific resolution options |
+
+**Standard resolution types:**
+
+| Type | Resolves | Returns |
+|------|----------|---------|
+| `vctm` | Verifiable Credential Type URI | Credential type metadata (display, claims, schema) |
+| `issuer_metadata` | Issuer URL | OID4VCI issuer metadata (supported credentials, grants) |
+| `trust` | Entity identifier | Trust evaluation (chain, status, trust list membership) |
+| `endpoint` | Participant identifier | WMP endpoint(s) and capabilities |
+| `openid_federation` | Entity ID URL | OpenID Federation entity configuration and trust chain |
+
+Profiles MAY define additional resolution types. For example, the eDelivery profile ([wmp-edelivery.md](wmp-edelivery.md)) adds `smp` for SMP/BDXL participant lookups.
+
+#### 5.8.2 Resolve Capability Parameters
+
+```json
+{
+  "resolve": {
+    "supported_types": ["vctm", "issuer_metadata", "trust", "endpoint"]
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `supported_types` | string[] | Resolution types this endpoint can serve |
+
+#### 5.8.3 Error Handling
+
+Resolution failures use standard WMP error responses:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "res-001",
+  "error": {
+    "code": -31005,
+    "message": "Resolution type not supported",
+    "data": {"type": "smp"}
+  }
+}
+```
+
+A resolution that succeeds but finds no metadata returns a result with `metadata: null`.
 
 ## 6. Structured Flows
 
@@ -753,7 +856,7 @@ The following flow types are defined by WMP Core:
 | `message` | Free-form structured message exchange |
 
 Additional flow types are defined by profile documents:
-- OpenID4x profile ([wmp-openid4x.md](wmp-openid4x.md)): `oid4vci`, `oid4vp`, `vctm`
+- OpenID4x profile ([wmp-openid4x.md](wmp-openid4x.md)): `oid4vci`, `oid4vp`
 
 ### 6.4 Sign Flow
 
@@ -1068,6 +1171,6 @@ All implementations MUST reject messages that violate the negotiated security mo
 
 ## Profiles
 
-- [WMP OpenID4x Profile](wmp-openid4x.md) — OID4VCI, OID4VP, and VCTM flows
+- [WMP OpenID4x Profile](wmp-openid4x.md) — OID4VCI and OID4VP flows
 - [WMP Evidence Profile](wmp-evidence.md) — Registered delivery evidence and receipts
 - [WMP eDelivery Profile](wmp-edelivery.md) — eDelivery/SMP/BDXL integration and organizational discovery
