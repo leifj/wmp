@@ -8,22 +8,35 @@
   "oneOf": [
     {
       "properties": {
-        "type": { "const": "verifiable_credential" },
+        "type": { "const": "verifiable_presentation" },
         "format": {
           "type": "string",
           "description": "Credential format identifier.",
           "examples": ["vc+sd-jwt", "mso_mdoc", "jwt_vc_json", "ldp_vc"]
         },
-        "credential": {
+        "vp_token": {
           "type": "string",
-          "description": "The encoded credential."
+          "description": "The encoded Verifiable Presentation token."
+        },
+        "audience": {
+          "type": "string",
+          "description": "Session ID or MLS group ID binding the presentation to the session."
+        },
+        "nonce": {
+          "type": "string",
+          "description": "Session challenge nonce for replay protection."
+        },
+        "disclosed_claims": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Claim names disclosed in the VP, for RP convenience."
         },
         "trust_hints": {
           "type": "array",
           "items": { "$ref": "wmp-trust-hint.json" }
         }
       },
-      "required": ["type", "format", "credential"]
+      "required": ["type", "format", "vp_token", "audience", "nonce"]
     },
     {
       "properties": {

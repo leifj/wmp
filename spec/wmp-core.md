@@ -250,7 +250,8 @@ Initiator                         Responder
     "mode": "mls",
     "cipher_suite": 1,
     "mls_group_info": "<base64url-encoded MLS GroupInfo>"
-  }
+  },
+  "challenge": "ch-9f8e7d6c"
 }
 ```
 
@@ -542,7 +543,17 @@ Implementations MAY also use RFC 9162 (Certificate Transparency) signed timestam
 
 WMP identifiers (DIDs, X.509 fingerprints, etc.) are cryptographic identifiers that do not inherently bind to a legal identity. For scenarios requiring legal person identification (e.g., eIDAS ERDS, regulatory compliance), the `identity_assertions` field carries verifiable bindings between the cryptographic identifier and a legal identity.
 
-Each identity assertion has a `type` indicating the credential format, and an optional `trust_hints` array. Trust hints are **suggestions from the sender** indicating trust frameworks under which the credential *may* be verifiable. The relying party (RP) is never obligated to follow a hint — the RP's local trust policy always determines which frameworks are acceptable and how credentials are validated.
+Identity assertions use a **presentation model**: the sender produces a Verifiable Presentation (VP) bound to the WMP session, rather than transmitting a raw credential. This ensures:
+
+- **Holder binding** — The VP proves the sender controls the credential (proof of possession).
+- **Replay protection** — The `nonce` (from the session challenge) and `audience` (session ID or MLS group ID) prevent replay across sessions.
+- **Selective disclosure** — The sender discloses only the claims required for the interaction.
+
+#### Session Challenge
+
+The session create response includes a `challenge` field — a server-generated nonce that MUST be used as the `nonce` parameter in any `verifiable_presentation` identity assertion within that session. This binds the presentation to the session and prevents replay.
+
+Each identity assertion has a `type` indicating the assertion mechanism, and an optional `trust_hints` array. Trust hints are **suggestions from the sender** indicating trust frameworks under which the underlying credential *may* be verifiable. The relying party (RP) is never obligated to follow a hint — the RP's local trust policy always determines which frameworks are acceptable and how credentials are validated.
 
 ```json
 {
@@ -552,9 +563,12 @@ Each identity assertion has a `type` indicating the credential format, and an op
     "sender": "did:web:alice.example.com",
     "identity_assertions": [
       {
-        "type": "verifiable_credential",
+        "type": "verifiable_presentation",
         "format": "vc+sd-jwt",
-        "credential": "eyJ...",
+        "vp_token": "eyJ...",
+        "audience": "ses-a1b2c3d4",
+        "nonce": "ch-9f8e7d6c",
+        "disclosed_claims": ["given_name", "family_name", "org_id"],
         "trust_hints": [
           {
             "framework": "eidas_lote",
@@ -577,8 +591,12 @@ Each identity assertion has a `type` indicating the credential format, and an op
 
 | Type | Description |
 |------|-------------|
-| `verifiable_credential` | A Verifiable Credential (W3C VCDM, ISO mdoc, etc.) binding the sender's identifier to identity claims. Fields: `format` (credential format, e.g., `vc+sd-jwt`, `mso_mdoc`), `credential` (the encoded credential). |
+| `verifiable_presentation` | A Verifiable Presentation (OID4VP `vp_token`) proving possession of a credential and disclosing selected claims. Fields: `format` (credential format, e.g., `vc+sd-jwt`, `mso_mdoc`), `vp_token` (the encoded VP token), `audience` (session ID or MLS group ID — binds the presentation to the session), `nonce` (session challenge — prevents replay), `disclosed_claims` (array of claim names disclosed in the VP, for RP convenience). |
 | `x509_chain` | An X.509 certificate chain binding the sender's key to an identity via a CA. Fields: `certificates` (base64-encoded DER chain). |
+
+#### MLS Group Considerations
+
+In MLS-encrypted sessions with multiple participants, identity assertions are **session-scoped**: the `audience` is the session ID and the `nonce` is the session challenge. All group members can verify the presentation. If a participant requires a per-recipient assertion (e.g., with recipient-specific audience), this SHOULD be handled via a separate direct WMP session between the two parties.
 
 #### 5.6.1 Trust Hints
 

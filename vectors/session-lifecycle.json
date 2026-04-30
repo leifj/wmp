@@ -42,7 +42,8 @@
           "cipher_suite": 1,
           "encrypted_capabilities": ["relay"],
           "mls_group_info": "*"
-        }
+        },
+        "challenge": "ch-*"
       }
     },
     "notes": "oid4vp removed from capabilities. relay added with MLS encryption required."

@@ -31,10 +31,11 @@
         "capabilities": {
           "messaging": { "max_size": 65536 }
         },
-        "security": { "mode": "tls" }
+        "security": { "mode": "tls" },
+        "challenge": "ch-*"
       }
     },
-    "notes": "session_id in response is server-generated. '*' means any valid session ID matching ^ses-[a-zA-Z0-9]+$."
+    "notes": "session_id in response is server-generated. '*' means any valid session ID matching ^ses-[a-zA-Z0-9]+$. challenge is a server-generated nonce for identity assertion replay protection."
   },
   {
     "id": "session-create-mls",
@@ -77,7 +78,8 @@
           "mode": "mls",
           "cipher_suite": 1,
           "mls_group_info": "*"
-        }
+        },
+        "challenge": "ch-*"
       }
     },
     "notes": "Responder selects cipher_suite from offered list. mls_group_info is base64url-encoded MLS GroupInfo."
@@ -125,7 +127,8 @@
           "cipher_suite": 1,
           "encrypted_capabilities": ["relay"],
           "mls_group_info": "*"
-        }
+        },
+        "challenge": "ch-*"
       }
     },
     "notes": "relay messages MUST be MLS-encrypted; messaging uses TLS only."
