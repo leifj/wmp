@@ -37,8 +37,7 @@ MLS requires each group member to present a credential that binds their identity
 |-----------------------|--------------------|-----------------|
 | `did` | `basic` or `x509` | DID string as identity; or X.509 cert with DID in SAN URI |
 | `x509` / `x509-san` / `x509-dn` | `x509` | X.509 certificate chain; identity from subject/SAN |
-| `openid-federation` | `basic` | Entity ID (HTTPS URL) as identity; verified via entity statement chain |
-| `uri` | `basic` | HTTPS URI as identity |
+| `uri` | `basic` | HTTPS URI as identity; trust optionally verified via OpenID Federation entity statements or TLS |
 | `mdoc` | `x509` | IACA-issued certificate chain |
 | `opaque` | `basic` | Opaque session-scoped string as identity |
 
@@ -58,7 +57,7 @@ When participants in the same MLS group use different identifier schemes, each p
     "group_id": "<base64url-encoded group ID>",
     "cipher_suite": 1,
     "accepted_credential_types": ["x509", "basic"],
-    "accepted_schemes": ["did", "x509", "openid-federation"],
+    "accepted_schemes": ["did", "x509", "uri"],
     "group_info": "<base64url-encoded GroupInfo>",
     "welcomes": {
       "did:web:bob.example.com": "<base64url-encoded Welcome>",

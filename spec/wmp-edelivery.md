@@ -330,9 +330,8 @@ Discovering WMP-capable organizational wallets operates at three layers:
 Query SMP for the organization's participant identifier. Look for WMP transport profiles (`bdxr-transport-wmp-*`). If present, the organization has a WMP endpoint.
 
 For organizations outside the eDelivery network, fall back to:
-- OpenID Federation: `/.well-known/openid-federation` with `wmp_endpoint` metadata
 - Well-known: `/.well-known/wmp-configuration` on the organization's domain
-- DID Document: `WMPEndpoint` service entry
+- Out-of-band endpoint configuration (e.g., provided during onboarding)
 
 **Layer 2 — "What capabilities does this organization support?"**
 
@@ -368,7 +367,7 @@ Organizations MAY also publish a `/.well-known/wmp-configuration` that includes 
     "oid4vci": {"supported_formats": ["vc+sd-jwt", "mso_mdoc"]},
     "evidence": {"event_types": ["submission_accepted", "delivery_confirmed"]}
   },
-  "accepted_schemes": ["ebcore", "did", "x509", "openid-federation"],
+  "accepted_schemes": ["ebcore", "did", "x509", "uri"],
   "security_modes": ["tls", "mls-optional"],
   "smp_url": "https://smp.example.com/iso6523-actorid-upis%3A%3A0007%3A5567164818"
 }

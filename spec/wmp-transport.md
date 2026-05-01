@@ -53,7 +53,7 @@ Client                                        Server
   │                                              │
 ```
 
-**Endpoint:** The WebSocket endpoint is discovered via DID Document service entries or well-known configuration. Default path: `/wmp`.
+**Endpoint:** The WebSocket endpoint is discovered via `/.well-known/wmp-configuration` (Section 7.5 of [wmp-core.md](wmp-core.md)). Default path: `/wmp`.
 
 **Subprotocol:** Clients SHOULD request the `wmp.v1` WebSocket subprotocol:
 
@@ -245,7 +245,7 @@ For local inter-process communication with higher throughput:
 
 ### 6.1 Capability Advertisement
 
-The well-known configuration (Section 7.2 of [wmp-core.md](wmp-core.md)) advertises supported transports:
+The well-known configuration (Section 7.5 of [wmp-core.md](wmp-core.md)) advertises supported transports:
 
 ```json
 {

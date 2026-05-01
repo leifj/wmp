@@ -979,10 +979,10 @@ Identifiers are always plain strings:
 | `mdoc:` | `mdoc` |
 | `urn:` | `urn` |
 | `ebcore:` | `ebcore` |
-| `https://` | `uri` or `openid-federation` (ambiguous — see below) |
+| `https://` | `uri` |
 | *(other)* | `opaque` |
 
-**Disambiguation for `https://` identifiers:** Both `openid-federation` and plain `uri` schemes use `https://` prefixes. The `accepted_schemes` array in `wmp.session.create` disambiguates: if only `openid-federation` is listed, an `https://` identifier is interpreted as a federation entity ID; if only `uri` is listed, it is a plain endpoint identifier. If both are accepted, the participant SHOULD resolve via OpenID Federation discovery first, falling back to plain URI if no entity configuration is found.
+All `https://` identifiers use the `uri` scheme for discovery purposes. Trust evaluation (e.g., whether an `https://` entity participates in an OpenID Federation) is orthogonal and handled via `identity_assertions` and `trust_hints` (Section 5.6).
 
 An optional `display` field MAY be included in structured contexts (e.g., participant lists in UI-facing metadata) but is never required by the protocol:
 
@@ -1001,12 +1001,13 @@ An optional `display` field MAY be included in structured contexts (e.g., partic
 | `x509` | `x509:sha256:<fingerprint>` | X.509 certificate fingerprint | eIDAS, EUDI, ISO 18013 |
 | `x509-san` | `x509:san:uri:<value>` or `x509:san:dns:<value>` | X.509 Subject Alternative Name | eIDAS, TLS |
 | `x509-dn` | `x509:dn:<distinguished-name>` | X.509 Subject Distinguished Name | eIDAS, PKI |
-| `openid-federation` | `https://<entity-id>` | OpenID Federation Entity Identifier | EUDI, OpenID |
+| `uri` | `https://<endpoint>` | HTTPS URI (entity IDs, issuer `iss`, client_id) | OID4VCI, OID4VP, OIDF |
 | `mdoc` | `mdoc:issuer:<issuer-data-element>` | ISO 18013-5 mdoc issuer identifier | mDL, EUDI |
-| `uri` | `https://<endpoint>` | Plain HTTPS URI (issuer `iss`, client_id) | OID4VCI, OID4VP |
 | `urn` | `urn:<namespace>:<id>` | URN-based identifiers | National ID systems |
 | `ebcore` | `ebcore:<catalog>:<scheme>:<id>` | ebCore Party Identifier (ISO 6523, etc.) | eDelivery, PEPPOL |
 | `opaque` | `<session-scoped-id>` | Opaque session-scoped identifier | Anonymous/pseudonymous |
+
+> **Note:** OpenID Federation entities are identified by their entity ID (`https://...`). The federation trust chain is a trust mechanism, not an addressing scheme — it is handled via `identity_assertions` with `trust_hints` of framework `openid_federation`.
 
 ### 7.3 Identifier in Session Messages
 
@@ -1050,10 +1051,9 @@ How a participant proves control of their identifier depends on the scheme:
 |--------|----------------------|
 | `did` | DID Document verification key; prove control via signature |
 | `x509` / `x509-san` / `x509-dn` | Present X.509 certificate chain; verify against trust anchor (eIDAS trust list, national CA) |
-| `openid-federation` | OpenID Federation entity statement chain; verify via trust anchor |
+| `uri` | TLS certificate for the domain; or bearer token issued by the URI authority. Optionally, OpenID Federation entity statement chain via `identity_assertions`. |
 | `mdoc` | ISO 18013-5 issuer authentication (IACA certificate) |
 | `ebcore` | Mutual TLS with the certificate from SMP; or bearer token issued by the SMP authority |
-| `uri` | TLS certificate for the domain; or bearer token issued by the URI authority |
 | `opaque` | Session-level authentication only (bearer token); no external identity binding |
 
 Multiple authentication methods MAY be supported simultaneously. The session creation request MAY specify which schemes are accepted:
@@ -1062,56 +1062,29 @@ Multiple authentication methods MAY be supported simultaneously. The session cre
 {
   "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
   "participants": ["x509:sha256:b3c4d5e6f7..."],
-  "accepted_schemes": ["did", "x509", "openid-federation"],
+  "accepted_schemes": ["did", "x509", "uri"],
   "capabilities_offered": {...}
 }
 ```
 
 ### 7.5 Endpoint Discovery
 
-Endpoint discovery is scheme-dependent:
+WMP defines a single, universal discovery mechanism: the **well-known WMP configuration** at `/.well-known/wmp-configuration` on the identifier's domain. This keeps discovery orthogonal to trust — how you *find* a WMP endpoint is independent of how you *trust* the counterparty.
 
-| Scheme | Discovery Method |
-|--------|------------------|
-| `did` | DID Document `service` entry of type `WMPEndpoint` |
-| `x509` | Well-known URI on the domain from the certificate SAN |
-| `openid-federation` | OpenID Federation entity configuration (`/.well-known/openid-federation`) with `wmp_endpoint` metadata |
-| `uri` | Well-known URI (`/.well-known/wmp-configuration`) on the URI domain |
-| `mdoc` | Out-of-band or via issuer metadata |
-| `ebcore` | BDXL DNS U-NAPTR → SMP HTTP query → WMP endpoint (see [wmp-edelivery.md](wmp-edelivery.md)) |
-| `opaque` | Session parameters (endpoint provided during session creation) |
+| Identifier type | Discovery method |
+|-----------------|------------------|
+| `did:web:example.com` | Resolve domain from DID → `https://example.com/.well-known/wmp-configuration` |
+| `did:<other-method>:...` | DID Document `service` entry of type `WMPMessaging` (endpoint URL only) |
+| `x509:san:dns:example.com` | Extract domain from SAN → `https://example.com/.well-known/wmp-configuration` |
+| `x509:sha256:...` | Domain provided out-of-band or via session parameters |
+| `https://example.com` | `https://example.com/.well-known/wmp-configuration` |
+| `ebcore:...` | BDXL DNS U-NAPTR → SMP HTTP query → WMP endpoint (see [wmp-edelivery.md](wmp-edelivery.md)) |
+| `mdoc:...` | Out-of-band or via issuer metadata |
+| `opaque` | Endpoint provided during session creation |
 
-**DID Document service entry:**
+> **Design rationale:** Discovery is intentionally decoupled from trust mechanisms. A participant's WMP endpoint is found via well-known configuration regardless of whether they participate in OpenID Federation, eIDAS trust lists, or any other trust framework. Trust is established *after* connection via `identity_assertions` and `trust_hints`.
 
-```json
-{
-  "id": "did:web:alice.example.com#wmp",
-  "type": "WMPEndpoint",
-  "serviceEndpoint": {
-    "websocket": "wss://alice.example.com/wmp",
-    "https": "https://alice.example.com/wmp"
-  }
-}
-```
-
-**OpenID Federation entity configuration:**
-
-```json
-{
-  "iss": "https://university.example.eu",
-  "sub": "https://university.example.eu",
-  "metadata": {
-    "wallet_provider": {
-      "wmp_endpoint": {
-        "websocket": "wss://university.example.eu/wmp",
-        "https": "https://university.example.eu/wmp"
-      }
-    }
-  }
-}
-```
-
-**Well-known configuration (for HTTPS URI participants):**
+**Well-known WMP configuration:**
 
 ```json
 {
@@ -1123,11 +1096,25 @@ Endpoint discovery is scheme-dependent:
     "messaging": {},
     "flows": {"max_concurrent": 10}
   },
-  "accepted_schemes": ["did", "x509", "openid-federation", "uri"],
+  "accepted_schemes": ["did", "x509", "uri"],
   "security_modes": ["tls", "mls", "mls-optional"],
   "mls_key_packages": "https://example.com/.well-known/mls-key-packages"
 }
 ```
+
+**DID Document service entry (for non-web DID methods):**
+
+For DID methods that cannot derive a domain for well-known lookup, the DID Document MAY include a service entry pointing to the WMP endpoint:
+
+```json
+{
+  "id": "did:key:z6Mkf...#wmp",
+  "type": "WMPMessaging",
+  "serviceEndpoint": "wss://relay.example.com/wmp"
+}
+```
+
+The service entry provides only the endpoint URL. Trust evaluation is performed independently via `identity_assertions` after session establishment.
 
 ### 7.6 Cross-Scheme Sessions
 
