@@ -63,12 +63,12 @@ Sec-WebSocket-Protocol: wmp.v1
 
 ### 3.2 Framing
 
-Each WebSocket text frame contains exactly one JSON-RPC 2.0 message (or one JSON array for batch requests). Binary frames are reserved for MLS-encrypted payloads.
+Each WebSocket text frame contains exactly one JSON-RPC 2.0 message (or one JSON array for batch requests). JSON-RPC framing is always the outermost layer — when MLS encryption is active, the encrypted ciphertext is carried *inside* the JSON-RPC envelope (in the message `body` field) with the `wmp` metadata indicating `encrypted: true` and the corresponding `epoch`. The transport layer never sees raw MLS binary data.
 
 | Frame Type | Content |
 |-----------|---------|
-| Text | JSON-RPC 2.0 message (plaintext) |
-| Binary | MLS-encrypted JSON-RPC 2.0 message |
+| Text | JSON-RPC 2.0 message (plaintext or containing MLS-encrypted body) |
+| Binary | Reserved for future use |
 
 ### 3.3 Ping/Pong
 
