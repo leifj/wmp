@@ -482,20 +482,24 @@ The `signature` object carries a detached signature over the message content, cr
 
 ```json
 {
-  "wmp": {
-    "version": "0.1",
-    "session_id": "ses-a1b2c3d4",
-    "sender": "did:web:alice.example.com",
-    "timestamp": "2026-04-29T10:15:30Z",
-    "signature": {
-      "alg": "EdDSA",
-      "kid": "did:web:alice.example.com#key-1",
-      "value": "<base64url-encoded detached JWS or COSE signature>"
-    }
-  },
-  "to": ["did:web:bob.example.com"],
-  "content_type": "application/json",
-  "body": { ... }
+  "jsonrpc": "2.0",
+  "method": "wmp.message.deliver",
+  "params": {
+    "wmp": {
+      "version": "0.1",
+      "session_id": "ses-a1b2c3d4",
+      "sender": "did:web:alice.example.com",
+      "timestamp": "2026-04-29T10:15:30Z",
+      "signature": {
+        "alg": "EdDSA",
+        "kid": "did:web:alice.example.com#key-1",
+        "value": "<base64url-encoded detached JWS or COSE signature>"
+      }
+    },
+    "to": ["did:web:bob.example.com"],
+    "content_type": "application/json",
+    "body": { ... }
+  }
 }
 ```
 
@@ -518,12 +522,19 @@ The `timestamp` field in `wmp` metadata is self-asserted by the sender. For lega
 
 ```json
 {
-  "wmp": {
-    "version": "0.1",
-    "session_id": "ses-a1b2c3d4",
-    "sender": "did:web:alice.example.com",
-    "timestamp": "2026-04-29T10:15:30Z",
-    "timestamp_token": "<base64url-encoded RFC 3161 TimeStampToken>"
+  "jsonrpc": "2.0",
+  "method": "wmp.message.deliver",
+  "params": {
+    "wmp": {
+      "version": "0.1",
+      "session_id": "ses-a1b2c3d4",
+      "sender": "did:web:alice.example.com",
+      "timestamp": "2026-04-29T10:15:30Z",
+      "timestamp_token": "<base64url-encoded RFC 3161 TimeStampToken>"
+    },
+    "to": ["did:web:bob.example.com"],
+    "content_type": "application/json",
+    "body": { ... }
   }
 }
 ```
@@ -557,32 +568,39 @@ Each identity assertion has a `type` indicating the assertion mechanism, and an 
 
 ```json
 {
-  "wmp": {
-    "version": "0.1",
-    "session_id": "ses-a1b2c3d4",
-    "sender": "did:web:alice.example.com",
-    "identity_assertions": [
-      {
-        "type": "verifiable_presentation",
-        "format": "vc+sd-jwt",
-        "vp_token": "eyJ...",
-        "audience": "ses-a1b2c3d4",
-        "nonce": "ch-9f8e7d6c",
-        "disclosed_claims": ["given_name", "family_name", "org_id"],
-        "trust_hints": [
-          {
-            "framework": "eidas_lote",
-            "lote_url": "https://eidas.ec.europa.eu/efda/tl/browser/",
-            "issuer_service_id": "urn:uuid:..."
-          },
-          {
-            "framework": "openid_federation",
-            "trust_anchor": "https://federation.example.eu",
-            "entity_statement": "eyJ..."
-          }
-        ]
-      }
-    ]
+  "jsonrpc": "2.0",
+  "method": "wmp.message.deliver",
+  "params": {
+    "wmp": {
+      "version": "0.1",
+      "session_id": "ses-a1b2c3d4",
+      "sender": "did:web:alice.example.com",
+      "identity_assertions": [
+        {
+          "type": "verifiable_presentation",
+          "format": "vc+sd-jwt",
+          "vp_token": "eyJ...",
+          "audience": "ses-a1b2c3d4",
+          "nonce": "ch-9f8e7d6c",
+          "disclosed_claims": ["given_name", "family_name", "org_id"],
+          "trust_hints": [
+            {
+              "framework": "eidas_lote",
+              "lote_url": "https://eidas.ec.europa.eu/efda/tl/browser/",
+              "issuer_service_id": "urn:uuid:..."
+            },
+            {
+              "framework": "openid_federation",
+              "trust_anchor": "https://federation.example.eu",
+              "entity_statement": "eyJ..."
+            }
+          ]
+        }
+      ]
+    },
+    "to": ["did:web:bob.example.com"],
+    "content_type": "application/json",
+    "body": { ... }
   }
 }
 ```
@@ -631,32 +649,39 @@ When messages traverse multiple WMP relays (the multi-hop equivalent of the ERDS
 
 ```json
 {
-  "wmp": {
-    "version": "0.1",
-    "session_id": "ses-a1b2c3d4",
-    "sender": "did:web:alice.example.com",
-    "relay_chain": [
-      {
-        "relay": "wss://relay-a.example.com/wmp",
-        "relay_id": "x509:san:dns:relay-a.example.com",
-        "timestamp": "2026-04-29T10:15:30Z",
-        "signature": {
-          "alg": "ES256",
-          "kid": "x509:san:dns:relay-a.example.com#key-1",
-          "value": "<base64url-encoded signature>"
+  "jsonrpc": "2.0",
+  "method": "wmp.message.deliver",
+  "params": {
+    "wmp": {
+      "version": "0.1",
+      "session_id": "ses-a1b2c3d4",
+      "sender": "did:web:alice.example.com",
+      "relay_chain": [
+        {
+          "relay": "wss://relay-a.example.com/wmp",
+          "relay_id": "x509:san:dns:relay-a.example.com",
+          "timestamp": "2026-04-29T10:15:30Z",
+          "signature": {
+            "alg": "ES256",
+            "kid": "x509:san:dns:relay-a.example.com#key-1",
+            "value": "<base64url-encoded signature>"
+          }
+        },
+        {
+          "relay": "wss://relay-b.example.com/wmp",
+          "relay_id": "x509:san:dns:relay-b.example.com",
+          "timestamp": "2026-04-29T10:15:31Z",
+          "signature": {
+            "alg": "ES256",
+            "kid": "x509:san:dns:relay-b.example.com#key-1",
+            "value": "<base64url-encoded signature>"
+          }
         }
-      },
-      {
-        "relay": "wss://relay-b.example.com/wmp",
-        "relay_id": "x509:san:dns:relay-b.example.com",
-        "timestamp": "2026-04-29T10:15:31Z",
-        "signature": {
-          "alg": "ES256",
-          "kid": "x509:san:dns:relay-b.example.com#key-1",
-          "value": "<base64url-encoded signature>"
-        }
-      }
-    ]
+      ]
+    },
+    "to": ["did:web:bob.example.com"],
+    "content_type": "application/json",
+    "body": { ... }
   }
 }
 ```
