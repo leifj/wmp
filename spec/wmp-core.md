@@ -592,7 +592,7 @@ Each identity assertion has a `type` indicating the assertion mechanism, and an 
 | Type | Description |
 |------|-------------|
 | `verifiable_presentation` | A Verifiable Presentation (OID4VP `vp_token`) proving possession of a credential and disclosing selected claims. Fields: `format` (credential format, e.g., `vc+sd-jwt`, `mso_mdoc`), `vp_token` (the encoded VP token), `audience` (session ID or MLS group ID — binds the presentation to the session), `nonce` (session challenge — prevents replay), `disclosed_claims` (array of claim names disclosed in the VP, for RP convenience). |
-| `x509_chain` | An X.509 certificate chain binding the sender's key to an identity via a CA. Fields: `certificates` (base64-encoded DER chain). |
+| `x509_chain` | An X.509 certificate chain binding the sender's key to an identity via a CA. Fields: `x5c` (base64-encoded DER chain, leaf first). |
 
 #### MLS Group Considerations
 

@@ -239,7 +239,7 @@ When per-message legal identity binding is required (e.g., for ERDS evidence), t
     "identity_assertions": [
       {
         "type": "x509_chain",
-        "certificates": [
+        "x5c": [
           "<base64-encoded leaf certificate>",
           "<base64-encoded intermediate CA>",
           "<base64-encoded root CA>"

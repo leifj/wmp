@@ -41,17 +41,17 @@
     {
       "properties": {
         "type": { "const": "x509_chain" },
-        "certificates": {
+        "x5c": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Base64-encoded DER certificate chain."
+          "description": "Base64-encoded DER certificate chain (leaf first)."
         },
         "trust_hints": {
           "type": "array",
           "items": { "$ref": "wmp-trust-hint.json" }
         }
       },
-      "required": ["type", "certificates"]
+      "required": ["type", "x5c"]
     }
   ]
 }
