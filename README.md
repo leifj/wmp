@@ -50,7 +50,7 @@ A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420
 
 ## Status
 
-**Draft** — This is an early-stage specification. Feedback welcome.
+**Draft** — This is an early-stage specification. Feedback welcome. The drafts is the result of an interactive dialoge with an AI coding agent. The intent is that this be used as the basis of discussion and possibly the starting point of specification work targeting the EU business wallet messaging requirements.
 
 ## Machine-Readable Artifacts
 
@@ -63,6 +63,3 @@ A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420
 These artifacts are designed for AI coding agents and automated tooling. Validate
 your implementation against the schemas, then run the test vectors.
 
-## License
-
-TBD
