@@ -958,19 +958,40 @@ Profiles extend WMP with domain-specific flow types. A profile document MUST def
 
 ### 7.1 Identifier Model
 
-WMP does not mandate a single identifier scheme. Participants are identified by URIs or structured identifiers, and the protocol treats identifiers as opaque strings for routing purposes. The identifier scheme determines how endpoint discovery and authentication are performed.
+WMP does not mandate a single identifier scheme. Participants are identified by URIs or structured identifiers, and the protocol treats identifiers as **opaque strings** for routing purposes. The identifier scheme is determined by the identifier's prefix — no separate `scheme` field is needed.
 
-Each participant identifier in a WMP session is represented as a structured object:
+Identifiers are always plain strings:
+
+```json
+"did:web:alice.example.com"
+"x509:sha256:b3c4d5e6f7..."
+"x509:san:dns:relay-a.example.com"
+"https://university.example.eu"
+"ebcore:iso6523:0088:7315458756324"
+```
+
+**Scheme inference rules:**
+
+| Prefix | Scheme |
+|--------|--------|
+| `did:` | `did` |
+| `x509:` | `x509` / `x509-san` / `x509-dn` (determined by sub-prefix) |
+| `mdoc:` | `mdoc` |
+| `urn:` | `urn` |
+| `ebcore:` | `ebcore` |
+| `https://` | `uri` or `openid-federation` (ambiguous — see below) |
+| *(other)* | `opaque` |
+
+**Disambiguation for `https://` identifiers:** Both `openid-federation` and plain `uri` schemes use `https://` prefixes. The `accepted_schemes` array in `wmp.session.create` disambiguates: if only `openid-federation` is listed, an `https://` identifier is interpreted as a federation entity ID; if only `uri` is listed, it is a plain endpoint identifier. If both are accepted, the participant SHOULD resolve via OpenID Federation discovery first, falling back to plain URI if no entity configuration is found.
+
+An optional `display` field MAY be included in structured contexts (e.g., participant lists in UI-facing metadata) but is never required by the protocol:
 
 ```json
 {
   "id": "did:web:alice.example.com",
-  "scheme": "did",
   "display": "Alice (example.com)"
 }
 ```
-
-For backward compatibility and brevity, a plain string MAY be used when the scheme can be inferred from the URI syntax.
 
 ### 7.2 Supported Identifier Schemes
 
