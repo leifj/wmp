@@ -645,7 +645,7 @@ Identity assertions MAY be sent once during session creation and are then valid 
 
 ### 5.7 Relay Provenance
 
-When messages traverse multiple WMP relays (the multi-hop equivalent of the ERDS extended model), the `relay_chain` field records the provenance:
+When a message traverses multiple WMP relays, each relay appends an entry to the `relay_chain` array before forwarding. On receipt, the recipient can inspect this chain to determine which relays handled the message, verify each hop's signature, and detect any tampering or unexpected routing:
 
 ```json
 {
