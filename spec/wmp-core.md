@@ -724,6 +724,8 @@ The `resolve` capability MUST be negotiated during session creation to use resol
 
 **Response:**
 
+The result carries the resolved document as an opaque `body` alongside a `content_type`, making the format extensible to any metadata representation. For `vctm` resolution the body MUST be the full Verifiable Credential Type Metadata document as defined in [SD-JWT VC Type Metadata](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-06.html#section-6):
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -732,15 +734,27 @@ The `resolve` capability MUST be negotiated during session creation to use resol
     "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
     "type": "vctm",
     "uri": "https://credentials.example.com/identity",
-    "metadata": {
+    "content_type": "application/vctm+json",
+    "body": {
       "vct": "https://credentials.example.com/identity",
       "name": "National ID Card",
       "description": "Government-issued identity credential",
-      "display": { "name": "National ID", "locale": "en" },
+      "display": [
+        {"lang": "en", "name": "National ID", "description": "Government-issued identity credential"}
+      ],
       "claims": [
-        {"path": ["given_name"], "display": {"name": "First name"}},
-        {"path": ["family_name"], "display": {"name": "Last name"}}
-      ]
+        {"path": ["given_name"], "display": [{"lang": "en", "name": "First name"}]},
+        {"path": ["family_name"], "display": [{"lang": "en", "name": "Last name"}]},
+        {"path": ["birthdate"], "display": [{"lang": "en", "name": "Date of birth"}]}
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "given_name": {"type": "string"},
+          "family_name": {"type": "string"},
+          "birthdate": {"type": "string", "format": "date"}
+        }
+      }
     },
     "trust_info": {
       "trusted": true,
@@ -757,6 +771,16 @@ The `resolve` capability MUST be negotiated during session creation to use resol
 | `type` | string | REQUIRED | Resolution type (see below) |
 | `uri` | string | REQUIRED | Identifier or URI to resolve |
 | `options` | object | OPTIONAL | Type-specific resolution options |
+
+**Response fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | REQUIRED | Echoed resolution type |
+| `uri` | string | REQUIRED | Echoed identifier/URI |
+| `content_type` | string | REQUIRED | Media type of `body` (e.g. `application/vctm+json`) |
+| `body` | object/string | REQUIRED | The resolved metadata document. `null` if not found. |
+| `trust_info` | object | OPTIONAL | Trust evaluation for the resolved entity |
 
 **Standard resolution types:**
 
@@ -800,7 +824,7 @@ Resolution failures use standard WMP error responses:
 }
 ```
 
-A resolution that succeeds but finds no metadata returns a result with `metadata: null`.
+A resolution that succeeds but finds no metadata returns a result with `body: null`.
 
 ## 6. Structured Flows
 
