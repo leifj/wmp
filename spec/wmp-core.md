@@ -627,7 +627,7 @@ A hint is actionable when it provides the RP with a concrete starting point for 
 | `eidas_lote` | eIDAS Trusted List. | `lote_url` — URL of the LoTE/LoTL to search. `issuer_service_id` — the service identifier of the issuer within the list (optional; speeds lookup). |
 | `openid_federation` | OpenID Federation trust chain. | `trust_anchor` — entity ID of the trust anchor. `entity_statement` — pre-fetched subordinate statement JWT (optional; avoids discovery round-trip). |
 | `x509_pki` | X.509 PKI validation. | `root_ca` — issuer DN or SKI of the expected root CA (optional; narrows trust store search). |
-| `domestic` | National or sector-specific framework. | `uri` — framework identifier URI. `validation_endpoint` — URL of a status/validation service (optional). |
+| `external` | National or sector-specific framework. | `uri` — framework identifier URI. `validation_endpoint` — URL of a status/validation service (optional). |
 
 **RP processing model:**
 

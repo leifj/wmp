@@ -9,7 +9,7 @@
     "framework": {
       "type": "string",
       "description": "Trust framework identifier.",
-      "enum": ["eidas_lote", "openid_federation", "x509_pki", "domestic"]
+      "enum": ["eidas_lote", "openid_federation", "x509_pki", "external"]
     }
   },
   "allOf": [
@@ -61,7 +61,7 @@
       }
     },
     {
-      "if": { "properties": { "framework": { "const": "domestic" } } },
+      "if": { "properties": { "framework": { "const": "external" } } },
       "then": {
         "properties": {
           "framework": true,
