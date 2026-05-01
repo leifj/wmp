@@ -554,6 +554,8 @@ Implementations MAY also use RFC 9162 (Certificate Transparency) signed timestam
 
 WMP identifiers (DIDs, X.509 fingerprints, etc.) are cryptographic identifiers that do not inherently bind to a legal identity. For scenarios requiring legal person identification (e.g., eIDAS ERDS, regulatory compliance), the `identity_assertions` field carries verifiable bindings between the cryptographic identifier and a legal identity.
 
+> **Note:** Identity assertions are *sender-initiated* proofs attached to messages or sessions — analogous to a TLS client certificate. For *verifier-initiated* credential requests (where a verifier asks a holder to prove specific attributes), see the `oid4vp` flow type in [wmp-openid4x.md](wmp-openid4x.md).
+
 Identity assertions use a **presentation model**: the sender produces a Verifiable Presentation (VP) bound to the WMP session, rather than transmitting a raw credential. This ensures:
 
 - **Holder binding** — The VP proves the sender controls the credential (proof of possession).

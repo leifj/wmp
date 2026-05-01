@@ -241,6 +241,8 @@ The `parent_flow_id` field links the sign flow to the parent OID4VCI flow. The s
 
 ### 3.2 `oid4vp` Flow — Verifiable Presentation
 
+The `oid4vp` flow is a *verifier-initiated* credential query: the verifier specifies what credentials/claims are needed and the wallet holder explicitly consents to disclosure. For *sender-initiated* identity binding (session authentication without a verifier request), see `identity_assertions` in WMP Core Section 5.6.
+
 #### 3.2.1 Start Parameters
 
 | Field | Type | Required | Description |
