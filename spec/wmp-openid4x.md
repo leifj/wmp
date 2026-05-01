@@ -117,7 +117,7 @@ At least one of `credential_offer` or `credential_offer_uri` MUST be provided.
 | `metadata_fetched` | Issuer metadata retrieved | `issuer_metadata`: issuer metadata object |
 | `evaluating_trust` | Evaluating trust chain for issuer | — |
 | `trust_evaluated` | Trust evaluation complete | `trust_info`: trust evaluation result |
-| `awaiting_selection` | Waiting for user to select credentials | `credentials`: available credential configurations, `issuer_metadata`: display info |
+| `awaiting_offer_acceptance` | Waiting for user to accept/select credential configurations from the offer | `credentials`: available credential configurations, `issuer_metadata`: display info |
 | `awaiting_tx_code` | Waiting for transaction code (PIN) | `tx_code_description`: description text |
 | `authorization_pending` | OAuth authorization in progress | `authorization_url`: URL for user-agent redirect |
 | `generating_proof` | Generating key proof | `proof_request`: proof parameters |
@@ -133,7 +133,7 @@ At least one of `credential_offer` or `credential_offer_uri` MUST be provided.
   "params": {
     "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
     "flow_id": "flow-vci-001",
-    "step": "awaiting_selection",
+    "step": "awaiting_offer_acceptance",
     "payload": {
       "credentials": [
         {
@@ -165,7 +165,7 @@ At least one of `credential_offer` or `credential_offer_uri` MUST be provided.
 
 | Action | Description | Parameters |
 |--------|-------------|------------|
-| `select_credential` | Select credential configuration(s) | `selected_indices`: int[], `consent`: bool |
+| `accept_offer` | Accept credential configuration(s) from the offer | `selected_indices`: int[], `consent`: bool |
 | `provide_tx_code` | Provide transaction code | `tx_code`: string |
 | `authorize` | Complete OAuth authorization | `auth_code`: string, `code_verifier`: string |
 | `cancel` | Cancel the flow | `reason`: string (optional) |
@@ -180,7 +180,7 @@ At least one of `credential_offer` or `credential_offer_uri` MUST be provided.
   "params": {
     "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
     "flow_id": "flow-vci-001",
-    "action": "select_credential",
+    "action": "accept_offer",
     "params": {
       "selected_indices": [0],
       "consent": true
@@ -280,15 +280,14 @@ The `oid4vp` flow is a *verifier-initiated* credential query: the verifier speci
 | `evaluating_trust` | Evaluating trust for verifier | — |
 | `trust_evaluated` | Trust evaluation complete | `trust_info`: trust evaluation result |
 | `matching_credentials` | Matching credentials against requirements | — |
-| `awaiting_selection` | Waiting for user to select credentials and consent | `matched_credentials`: matching credentials, `requested_claims`: claims requested |
+| `awaiting_consent` | Waiting for user to select credentials and consent to disclosure | `matched_credentials`: matching credentials, `requested_claims`: claims requested |
 | `generating_presentation` | Generating VP token | — |
 
 #### 3.2.3 Actions
 
 | Action | Description | Parameters |
 |--------|-------------|------------|
-| `select_credentials` | Select credentials for presentation | `selections`: credential selections with claim disclosure |
-| `consent` | Provide consent for disclosure | `approved`: bool, `disclosed_claims`: string[] |
+| `select_credentials` | Select credentials and consent to disclosure | `selections`: credential selections with claim disclosure, `consent`: bool |
 | `cancel` | Cancel the flow | `reason`: string (optional) |
 
 **Credential selection with selective disclosure:**
@@ -308,7 +307,8 @@ The `oid4vp` flow is a *verifier-initiated* credential query: the verifier speci
           "credential_id": "cred-001",
           "disclosed_claims": ["given_name", "family_name", "age_over_18"]
         }
-      ]
+      ],
+      "consent": true
     }
   }
 }
@@ -353,11 +353,11 @@ wallet                             orchestrator
       │    payload: {trust_info}}           │
       │                                    │
       │<── wmp.flow.progress ──────────────│
-      │   {step: "awaiting_selection",     │
+      │   {step: "awaiting_offer_acceptance",│
       │    payload: {credentials: [...]}}   │
       │                                    │
       │── wmp.flow.action ───────────────>│
-      │   {action: "select_credential",    │
+      │   {action: "accept_offer",         │
       │    params: {selected_indices: [0],  │
       │             consent: true}}         │
       │                                    │
@@ -402,14 +402,15 @@ verifier-agent                     user-wallet
       │        }}}                     │
       │                                │
       │<── wmp.flow.progress ──────────│
-      │   {step: "awaiting_selection", │
+      │   {step: "awaiting_consent",   │
       │    payload: {matched_creds}}   │
       │                                │
       │   (user reviews and consents)  │
       │                                │
       │<── wmp.flow.action ────────────│
       │   {action: "select_credentials",
-      │    params: {selections: [...]}} │
+      │    params: {selections: [...], │
+      │             consent: true}}    │
       │                                │
       │<── wmp.flow.complete ──────────│
       │   {result: {vp_token: "..."}}  │
@@ -424,7 +425,7 @@ Before presenting credentials or accepting issued credentials, implementations M
 
 ### 6.2 Selective Disclosure
 
-When the `oid4vp` flow reaches `awaiting_selection`, the wallet MUST present the user with the specific claims requested and allow the user to control which claims are disclosed. Implementations MUST NOT disclose claims beyond what the user explicitly consents to.
+When the `oid4vp` flow reaches `awaiting_consent`, the wallet MUST present the user with the specific claims requested and allow the user to control which claims are disclosed. Implementations MUST NOT disclose claims beyond what the user explicitly consents to.
 
 ### 6.3 Nonce Binding
 
