@@ -437,7 +437,14 @@ Point-to-point messages within a session:
 
 ### 5.2 Group Messages
 
-When MLS is active, messages are encrypted to the group:
+When MLS is active, the message content is encrypted inside the JSON-RPC envelope. The JSON-RPC framing is always the outermost layer — it is never encrypted.
+
+**Encryption construction:**
+
+1. The sender constructs the **plaintext payload** — a JSON object containing the fields that would normally appear in `params` *excluding* the `wmp` metadata. For a `wmp.message.deliver` call, this is `{to, content_type, body}`.
+2. The plaintext is UTF-8 encoded and encrypted using the MLS group's current epoch key, producing an MLS `MLSMessage` (RFC 9420 §6).
+3. The resulting binary ciphertext is base64url-encoded and placed in the `ciphertext` field of the outer JSON-RPC envelope.
+4. The outer envelope's `wmp` metadata carries `encrypted: true` and `epoch` so recipients know which key to use for decryption.
 
 ```json
 {
@@ -455,6 +462,15 @@ When MLS is active, messages are encrypted to the group:
   }
 }
 ```
+
+**On decryption**, the recipient:
+
+1. Identifies the session and epoch from `wmp.session_id` and `wmp.epoch`.
+2. Base64url-decodes the `ciphertext` field.
+3. Decrypts the MLS `MLSMessage` using the group key for the given epoch.
+4. Parses the resulting UTF-8 bytes as a JSON object containing the plaintext fields (`to`, `content_type`, `body`, etc.).
+
+The `wmp` metadata (version, session_id, sender, encrypted, epoch) remains in plaintext for routing — relays need these fields to forward messages without access to the encrypted content. See [wmp-mls.md](wmp-mls.md) Section 4 for full details.
 
 ### 5.3 Message Acknowledgment
 

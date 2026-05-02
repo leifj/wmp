@@ -1,0 +1,5 @@
+Some notes
+
+1. The secion on message delivery in core should specify clearly how the ciphertext messages are constructed
+
+2. The section on signature processing specifies the use of JCS. Analyze this choice in the light of JWS/JOSE and ensure alignment with industry standards

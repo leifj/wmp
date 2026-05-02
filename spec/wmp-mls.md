@@ -194,14 +194,14 @@ Participants SHOULD perform regular key updates for post-compromise security:
 
 ### 4.1 Plaintext to Ciphertext
 
-When MLS is active, the JSON-RPC 2.0 message is the plaintext input to MLS:
+When MLS is active, the message content fields (everything in `params` except the `wmp` metadata object) form the plaintext input to MLS. The JSON-RPC envelope is never encrypted — it always remains the outermost transport frame.
 
 ```
-┌──────────────────────────────────┐
-│ JSON-RPC 2.0 message (plaintext) │
-│ {"jsonrpc":"2.0","method":"..."}  │
-└──────────────┬───────────────────┘
-               │ MLS encrypt
+┌──────────────────────────────────────────────┐
+│ Plaintext: content fields as JSON object      │
+│ {"to":[...],"content_type":"...","body":{}}   │
+└──────────────┬───────────────────────────────┘
+               │ UTF-8 encode → MLS encrypt (epoch key)
                ▼
 ┌──────────────────────────────────┐
 │ MLS MLSMessage (ciphertext)      │
@@ -210,31 +210,34 @@ When MLS is active, the JSON-RPC 2.0 message is the plaintext input to MLS:
                │ base64url encode
                ▼
 ┌──────────────────────────────────────────────┐
-│ WMP envelope with ciphertext                  │
+│ JSON-RPC envelope (always plaintext framing)  │
 │ {"jsonrpc":"2.0",                             │
 │  "method":"wmp.message.deliver",              │
-│  "params":{"wmp":{..., "encrypted":true},     │
+│  "params":{"wmp":{..., "encrypted":true,      │
+│                   "epoch":3},                 │
 │            "ciphertext":"<base64url>"}}        │
 └──────────────────────────────────────────────┘
 ```
 
-### 4.2 Binary Transport Optimization
+The `method` field in the outer envelope indicates what kind of message this is (e.g. `wmp.message.deliver`). The actual content (recipients, body, flow data, etc.) is inside the ciphertext and opaque to relays.
 
-On WebSocket transport, MLS-encrypted messages MAY be sent as binary frames to avoid base64url encoding overhead. The binary frame contains the raw MLS MLSMessage prefixed with a 16-byte session ID:
+### 4.2 Base64url Encoding
 
-```
-[16 bytes: session_id (UUID binary)][N bytes: MLS MLSMessage]
-```
+The MLS `MLSMessage` binary output is encoded as base64url (RFC 4648 §5, no padding) for inclusion in the JSON-RPC text envelope. This ensures all transports (WebSocket text frames, HTTPS, native messaging) can carry encrypted messages uniformly without requiring binary frame support.
 
 ### 4.3 Encryption Scope
 
-The following message fields are encrypted (inside the MLS ciphertext):
-- `method`
-- `params` (excluding `wmp` metadata)
-- `result`
-- `error`
+The following fields are encrypted (inside the MLS ciphertext):
+- `to` (recipients)
+- `content_type`
+- `body`
+- Any other content fields in `params` (flow data, action params, etc.)
+- For responses: `result` or `error`
 
-The following fields remain in plaintext (for routing):
+The following fields remain in plaintext (in the outer JSON-RPC envelope, for routing):
+- `jsonrpc`
+- `method`
+- `id` (for request/response correlation)
 - `wmp.version`
 - `wmp.session_id`
 - `wmp.encrypted`
