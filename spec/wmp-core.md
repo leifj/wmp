@@ -536,22 +536,58 @@ The `signature` field is a **compact JWS with detached payload** (RFC 7515 Appen
 | `b64` | REQUIRED | MUST be `false` (RFC 7797 — unencoded payload) |
 | `crit` | REQUIRED | MUST include `"b64"` |
 
-**Payload construction:** The JWS payload (the bytes that are signed) is the UTF-8 encoding of the JCS-canonicalized (RFC 8785) content — specifically, the `params` or `result` object excluding the `wmp` metadata. JCS provides deterministic serialization so that any party can reconstruct the exact signed bytes from the JSON content.
+**Payload construction:**
+
+The signed payload `M` is constructed as follows:
+
+1. **Extract the content object.** For requests: take the `params` JSON object and remove the `wmp` key — the remaining key/value pairs form the content object. For responses: take the `result` or `error` JSON object as-is.
+2. **Canonicalize.** Apply JCS (RFC 8785) to the content object. This produces a deterministic UTF-8 byte string `M`.
+
+Concretely, for a request with:
+```json
+{ "params": { "wmp": {...}, "to": [...], "content_type": "...", "body": {...} } }
+```
+the content object is `{"to": [...], "content_type": "...", "body": {...}}` and `M` = JCS(content object) encoded as UTF-8 bytes.
+
+**JWS Signing Input:**
+
+Per RFC 7515 §5.1 with the RFC 7797 `b64: false` modification, the signing input is the byte concatenation:
+
+```
+ASCII(BASE64URL(UTF8(JWS Protected Header))) || 0x2E || M
+```
+
+where `0x2E` is the ASCII period character and `M` is the raw canonical payload bytes (NOT base64url-encoded, because `b64` is `false`). The digital signature is computed over this exact byte string.
+
+**Output encoding (compact serialization with detached payload):**
+
+The `wmp.signature` field value is the JWS Compact Serialization with the payload segment omitted (RFC 7515 Appendix F):
+
+```
+BASE64URL(UTF8(JWS Protected Header)) || '.' || '' || '.' || BASE64URL(JWS Signature)
+```
+
+That is, the value has the form `<header>..<signature>` — two base64url strings separated by two consecutive period characters (the empty middle segment indicates the payload is detached and must be reconstructed from the message content).
 
 **Signing procedure:**
 
-1. Extract the content fields from `params` (everything except `wmp`), or `result`/`error` for responses.
-2. Serialize using JCS (RFC 8785) to produce canonical UTF-8 bytes.
-3. Construct the JWS with `b64: false` (RFC 7797) using the canonical bytes as the unencoded payload.
-4. Produce the compact serialization with detached payload: `<protected-header>..<signature>`.
-5. Place the resulting string in `wmp.signature`.
+1. Construct the JWS Protected Header JSON object containing `alg`, `kid`, `b64: false`, `crit: ["b64"]`, and optionally `x5c`.
+2. Compute `HEADER` = BASE64URL(UTF8(JWS Protected Header)).
+3. Extract the content object from the message (remove `wmp` from `params`, or use `result`/`error` directly).
+4. Compute `M` = UTF8(JCS(content object)).
+5. Compute the signing input: `ASCII(HEADER) || 0x2E || M`.
+6. Sign the signing input with the private key using the algorithm specified by `alg`, producing the signature bytes `S`.
+7. Set `wmp.signature` = `HEADER || '..' || BASE64URL(S)`.
 
 **Verification procedure:**
 
-1. Parse the detached JWS from `wmp.signature`.
-2. Extract the content fields from the received message.
-3. JCS-canonicalize the content to produce the payload bytes.
-4. Verify the JWS signature using the reconstructed payload and the key identified by `kid` (or `x5c`).
+1. Parse `wmp.signature` by splitting on `'.'` — this yields three segments: `HEADER`, `""` (empty), and `SIG`.
+2. Decode `HEADER` from base64url to obtain the JWS Protected Header JSON. Verify that `b64` is `false` and `crit` includes `"b64"`.
+3. Extract the content object from the received message (same extraction rule as signing).
+4. Compute `M` = UTF8(JCS(content object)).
+5. Compute the signing input: `ASCII(HEADER) || 0x2E || M`.
+6. Decode `SIG` from base64url to obtain the signature bytes `S`.
+7. Verify `S` over the signing input using the public key identified by `kid` (resolved via DID document, X.509 certificate, etc.) or the leaf certificate in `x5c`.
 
 **When to sign:** Non-repudiation signatures are OPTIONAL by default. Profiles MAY require them for specific flow types or capabilities. The `evidence` profile (see [wmp-evidence.md](wmp-evidence.md)) requires signatures on all evidence messages.
 
@@ -727,10 +763,30 @@ When a message traverses multiple WMP relays, each relay appends an entry to the
 | `relay_id` | string | REQUIRED | Relay identifier (WMP identifier scheme) |
 | `timestamp` | string | REQUIRED | ISO 8601 timestamp when relay processed the message |
 | `timestamp_token` | string | OPTIONAL | RFC 3161 timestamp token for the relay hop |
-| `signature` | string | OPTIONAL | Detached JWS (RFC 7515 Appendix F) over the message hash + hop metadata |
+| `signature` | string | OPTIONAL | Detached JWS (RFC 7515 Appendix F) — see relay signature construction below |
 | `service_class` | string | OPTIONAL | Service class: `best_effort`, `standard`, `registered`, `certified` |
 
 Each relay in the chain SHOULD append its entry before forwarding. The `signature` field in each entry allows recipients to verify relay provenance independently. When the `evidence` capability is active (see [wmp-evidence.md](wmp-evidence.md)), relays MUST sign their entries.
+
+**Relay signature construction:**
+
+The relay entry signature uses the same detached JWS format as §5.4, but the payload is constructed differently to bind the relay hop to the message content:
+
+1. **Compute the content hash.** Take the content object (same extraction as §5.4 — `params` minus `wmp`), JCS-canonicalize it, and compute its SHA-256 hash: `H` = SHA-256(UTF8(JCS(content object))).
+2. **Construct the relay signing object.** Build the following JSON object:
+   ```json
+   {
+     "content_hash": "<base64url(H)>",
+     "relay": "<relay endpoint URI>",
+     "relay_id": "<relay identifier>",
+     "timestamp": "<ISO 8601 timestamp>"
+   }
+   ```
+   Include `previous_chain` (array of prior relay entry signatures, in order) if this is not the first hop, to chain the provenance.
+3. **Canonicalize.** Apply JCS (RFC 8785) to the relay signing object to produce payload bytes `M`.
+4. **Sign.** Compute the detached JWS over `M` exactly as specified in §5.4 (signing input = `ASCII(HEADER) || 0x2E || M`, output = `HEADER..BASE64URL(S)`).
+
+This construction binds each relay's attestation to both the message content (via the hash) and the relay's own identity and timestamp, while keeping the relay entry compact (the full message content is not repeated).
 
 ### 5.8 Metadata Resolution
 
