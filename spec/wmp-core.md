@@ -141,7 +141,7 @@ The `wmp` object within `params` or `result` carries protocol metadata:
 | `timestamp_token` | string | OPTIONAL | Base64url-encoded RFC 3161 timestamp token from a trusted TSA. |
 | `encrypted` | boolean | OPTIONAL | `true` if the payload is MLS-encrypted. Default: `false`. |
 | `epoch` | integer | OPTIONAL | MLS epoch number when `encrypted` is `true`. |
-| `signature` | object | OPTIONAL | Non-repudiation signature (see Section 3.6). |
+| `signature` | string | OPTIONAL | Detached JWS for non-repudiation (see Section 5.4). |
 | `identity_assertions` | array | OPTIONAL | Legal identity bindings (see Section 3.7). |
 | `relay_chain` | array | OPTIONAL | Relay provenance chain (see Section 3.8). |
 | `trace_id` | string | OPTIONAL | Distributed tracing identifier. |
@@ -494,7 +494,7 @@ Status values: `received`, `read`, `processed`, `failed`.
 
 MLS provides sender authentication within a group, but MLS authentication keys are ephemeral and group-scoped — they cannot produce standalone artifacts verifiable by third parties (auditors, courts). For non-repudiation, WMP defines an optional `signature` field in the `wmp` metadata object.
 
-The `signature` object carries a detached signature over the message content, created with a long-lived key bound to the sender's identity (not the MLS leaf key):
+The `signature` field carries a **detached JWS** (RFC 7515 Appendix F) over the message content, created with a long-lived key bound to the sender's identity (not the MLS leaf key). Using standard JOSE ensures interoperability with existing libraries and alignment with the broader OID4VC ecosystem.
 
 ```json
 {
@@ -506,11 +506,7 @@ The `signature` object carries a detached signature over the message content, cr
       "session_id": "ses-a1b2c3d4",
       "sender": "did:web:alice.example.com",
       "timestamp": "2026-04-29T10:15:30Z",
-      "signature": {
-        "alg": "EdDSA",
-        "kid": "did:web:alice.example.com#key-1",
-        "value": "<base64url-encoded detached JWS or COSE signature>"
-      }
+      "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6YWxpY2UuZXhhbXBsZS5jb20ja2V5LTEifQ..SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
     },
     "to": ["did:web:bob.example.com"],
     "content_type": "application/json",
@@ -519,16 +515,43 @@ The `signature` object carries a detached signature over the message content, cr
 }
 ```
 
-**Signature object fields:**
+The `signature` field is a **compact JWS with detached payload** (RFC 7515 Appendix F): `<header>..<signature>` (the payload segment between the dots is empty). The JWS protected header carries `alg`, `kid`, and optionally `x5c`:
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `alg` | string | REQUIRED | Signature algorithm (JWA identifier: `EdDSA`, `ES256`, `ES384`, `PS256`, etc.) |
-| `kid` | string | REQUIRED | Key identifier — URI referencing the verification key (DID URL, X.509 SKI, JWK thumbprint) |
-| `value` | string | REQUIRED | Base64url-encoded detached signature over the canonical message content |
-| `x5c` | string[] | OPTIONAL | X.509 certificate chain for the signing key (base64-encoded DER) |
+```json
+{
+  "alg": "EdDSA",
+  "kid": "did:web:alice.example.com#key-1",
+  "b64": false,
+  "crit": ["b64"]
+}
+```
 
-**Canonicalization:** The signature is computed over the UTF-8 encoding of the JSON-serialized message content (the `params` or `result` object excluding the `wmp` metadata). Implementations MUST use JCS (RFC 8785) for deterministic JSON serialization before signing.
+**JWS header parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `alg` | REQUIRED | JWA algorithm identifier (`EdDSA`, `ES256`, `ES384`, `PS256`, etc.) |
+| `kid` | REQUIRED | Key identifier — URI referencing the verification key (DID URL, X.509 SKI, JWK thumbprint) |
+| `x5c` | OPTIONAL | X.509 certificate chain (base64-encoded DER, leaf first) |
+| `b64` | REQUIRED | MUST be `false` (RFC 7797 — unencoded payload) |
+| `crit` | REQUIRED | MUST include `"b64"` |
+
+**Payload construction:** The JWS payload (the bytes that are signed) is the UTF-8 encoding of the JCS-canonicalized (RFC 8785) content — specifically, the `params` or `result` object excluding the `wmp` metadata. JCS provides deterministic serialization so that any party can reconstruct the exact signed bytes from the JSON content.
+
+**Signing procedure:**
+
+1. Extract the content fields from `params` (everything except `wmp`), or `result`/`error` for responses.
+2. Serialize using JCS (RFC 8785) to produce canonical UTF-8 bytes.
+3. Construct the JWS with `b64: false` (RFC 7797) using the canonical bytes as the unencoded payload.
+4. Produce the compact serialization with detached payload: `<protected-header>..<signature>`.
+5. Place the resulting string in `wmp.signature`.
+
+**Verification procedure:**
+
+1. Parse the detached JWS from `wmp.signature`.
+2. Extract the content fields from the received message.
+3. JCS-canonicalize the content to produce the payload bytes.
+4. Verify the JWS signature using the reconstructed payload and the key identified by `kid` (or `x5c`).
 
 **When to sign:** Non-repudiation signatures are OPTIONAL by default. Profiles MAY require them for specific flow types or capabilities. The `evidence` profile (see [wmp-evidence.md](wmp-evidence.md)) requires signatures on all evidence messages.
 
@@ -679,21 +702,13 @@ When a message traverses multiple WMP relays, each relay appends an entry to the
           "relay": "wss://relay-a.example.com/wmp",
           "relay_id": "x509:san:dns:relay-a.example.com",
           "timestamp": "2026-04-29T10:15:30Z",
-          "signature": {
-            "alg": "ES256",
-            "kid": "x509:san:dns:relay-a.example.com#key-1",
-            "value": "<base64url-encoded signature>"
-          }
+          "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6Ing1MDk6c2FuOmRuczpyZWxheS1hLmV4YW1wbGUuY29tI2tleS0xIiwiYjY0IjpmYWxzZSwiY3JpdCI6WyJiNjQiXX0..MEUCIQDx-signature-a"
         },
         {
           "relay": "wss://relay-b.example.com/wmp",
           "relay_id": "x509:san:dns:relay-b.example.com",
           "timestamp": "2026-04-29T10:15:31Z",
-          "signature": {
-            "alg": "ES256",
-            "kid": "x509:san:dns:relay-b.example.com#key-1",
-            "value": "<base64url-encoded signature>"
-          }
+          "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6Ing1MDk6c2FuOmRuczpyZWxheS1iLmV4YW1wbGUuY29tI2tleS0xIiwiYjY0IjpmYWxzZSwiY3JpdCI6WyJiNjQiXX0..MEUCIQDx-signature-b"
         }
       ]
     },
@@ -712,7 +727,7 @@ When a message traverses multiple WMP relays, each relay appends an entry to the
 | `relay_id` | string | REQUIRED | Relay identifier (WMP identifier scheme) |
 | `timestamp` | string | REQUIRED | ISO 8601 timestamp when relay processed the message |
 | `timestamp_token` | string | OPTIONAL | RFC 3161 timestamp token for the relay hop |
-| `signature` | object | OPTIONAL | Relay's signature over the message hash + hop metadata |
+| `signature` | string | OPTIONAL | Detached JWS (RFC 7515 Appendix F) over the message hash + hop metadata |
 | `service_class` | string | OPTIONAL | Service class: `best_effort`, `standard`, `registered`, `certified` |
 
 Each relay in the chain SHOULD append its entry before forwarding. The `signature` field in each entry allows recipients to verify relay provenance independently. When the `evidence` capability is active (see [wmp-evidence.md](wmp-evidence.md)), relays MUST sign their entries.
