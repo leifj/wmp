@@ -591,6 +591,8 @@ That is, the value has the form `<header>..<signature>` — two base64url string
 
 **When to sign:** Non-repudiation signatures are OPTIONAL by default. Profiles MAY require them for specific flow types or capabilities. The `evidence` profile (see [wmp-evidence.md](wmp-evidence.md)) requires signatures on all evidence messages.
 
+**JAdES compatibility:** WMP non-repudiation signatures are structurally compatible with JAdES-B-B (ETSI EN 319 182-1) when the JWS protected header includes the `sigT` (signing time) claim. Implementations operating under EU eIDAS requirements that need qualified or advanced electronic signatures MAY produce full JAdES-B-T signatures by switching to JWS JSON Serialization and including an RFC 3161 timestamp token in the `etsiU` unsigned header array. A WMP profile for JAdES-B-T and above is out of scope for this core specification but MAY be defined in a separate document.
+
 ### 5.5 Trusted Timestamping
 
 The `timestamp` field in `wmp` metadata is self-asserted by the sender. For legally-binding time attestation, the `timestamp_token` field carries an externally-issued timestamp.
