@@ -68,6 +68,65 @@ WMP defines four layers:
 
 For point-to-point sessions without E2E encryption requirements, the MLS layer MAY be omitted and transport-level security (TLS) used instead.
 
+### 2.2 Version Negotiation
+
+WMP uses semantic versioning for the protocol version string (`MAJOR.MINOR`). Versions with the same MAJOR number are backward-compatible (new MINOR versions add features but do not break existing behavior).
+
+#### 2.2.1 Version Advertisement
+
+The well-known configuration (§7.5.1) MUST include a `supported_versions` field:
+
+```json
+{
+  "supported_versions": ["0.1", "0.2"],
+  "endpoints": {...}
+}
+```
+
+This allows clients to determine the server's capabilities before initiating a session.
+
+#### 2.2.2 Version Selection
+
+Version is negotiated during session creation:
+
+1. The initiator sends `wmp.session.create` with `wmp.version` set to the **highest version it supports**.
+2. The responder selects the highest version it supports that is ≤ the initiator's version.
+3. The responder returns the selected version in the result's `wmp.version` field.
+4. All subsequent messages in the session use the negotiated version.
+
+**Example:** Initiator supports 0.2, responder supports 0.1 and 0.2:
+
+```json
+// Request
+{"wmp": {"version": "0.2", "sender": "..."}, ...}
+
+// Response — responder selects 0.2
+{"wmp": {"version": "0.2", "session_id": "ses-..."}, ...}
+```
+
+**Example:** Initiator supports 0.2, responder only supports 0.1:
+
+```json
+// Request
+{"wmp": {"version": "0.2", "sender": "..."}, ...}
+
+// Response — responder selects 0.1 (highest it supports)
+{"wmp": {"version": "0.1", "session_id": "ses-..."}, ...}
+```
+
+If the responder does not support any version compatible with the initiator (different MAJOR version), it MUST reject the session with a new error:
+
+| Code | Message | Description |
+|------|---------|-------------|
+| -31013 | Version not supported | No compatible protocol version. `data` SHOULD include `supported_versions` array. |
+
+#### 2.2.3 Version Invariants
+
+- All messages within a session MUST use the negotiated version string.
+- A participant MUST NOT send features defined in a higher version than negotiated.
+- Implementations MUST ignore unknown fields in the `wmp` metadata object (forward compatibility).
+- The `wmp.version` field is REQUIRED in all messages to enable stateless routing by intermediaries.
+
 ## 3. Message Format
 
 ### 3.1 Base Envelope
@@ -142,6 +201,7 @@ The `wmp` object within `params` or `result` carries protocol metadata:
 | `encrypted` | boolean | OPTIONAL | `true` if the payload is MLS-encrypted. Default: `false`. |
 | `epoch` | integer | OPTIONAL | MLS epoch number when `encrypted` is `true`. |
 | `signature` | string | OPTIONAL | Detached JWS for non-repudiation (see Section 5.4). |
+| `expires_at` | string | OPTIONAL | ISO 8601 timestamp. If set, the message MUST NOT be delivered after this time. Servers MUST discard queued messages past this time (see §5.3.1). |
 | `identity_assertions` | array | OPTIONAL | Legal identity bindings (see Section 3.7). |
 | `relay_chain` | array | OPTIONAL | Relay provenance chain (see Section 3.8). |
 | `trace_id` | string | OPTIONAL | Distributed tracing identifier. |
@@ -193,13 +253,15 @@ WMP extends the standard JSON-RPC 2.0 error code space:
 | -31003 | Encryption required | Operation requires MLS encryption |
 | -31004 | MLS error | MLS protocol error (details in `data`) |
 | -31005 | Capability not supported | Requested capability not available |
-| -31006 | Flow error | Structured flow error (details in `data`) |
+| -31006 | Flow error | Structured flow error (details in `data`; `retryable` flag indicates whether the action can be resent — see §6.2.1) |
 | -31007 | Rate limited | Too many requests |
 | -31008 | Participant not found | Referenced participant not in session |
 | -31009 | Evidence required | Operation requires evidence generation (evidence profile) |
 | -31010 | Signature invalid | Non-repudiation signature verification failed |
-| -31011 | Timestamp invalid | Trusted timestamp verification failed |
-| -31012 | Identity assertion invalid | Identity assertion verification failed |
+| -31011 | Timestamp invalid | Trusted timestamp verification failed or self-asserted timestamp outside clock skew tolerance (see §8.5). `data` SHOULD include `acceptable_window_seconds`. |
+| -31012 | Identity assertion invalid | Identity assertion verification failed (diagnostic `data` in response — see §5.6.2) |
+| -31013 | Version not supported | No compatible protocol version (§2.2) |
+| -31014 | Queue full | Offline message queue for recipient is full; sender SHOULD retry later |
 
 ## 4. Session Lifecycle
 
@@ -276,7 +338,7 @@ Modeled after MCP's `initialize` handshake. The initiator offers capabilities; t
 | `sign` | Client-side signing operations | `proof_types`: supported proof types |
 | `mcp` | MCP-compatible tool/resource access | `tools`: bool, `resources`: bool, `prompts`: bool |
 | `relay` | Message relay to third parties | `destinations`: allowed destination patterns |
-| `offline` | Offline message queuing | `max_queued`: max queued messages, `ttl`: queue retention |
+| `offline` | Offline message queuing and delivery status | `max_queued`: max queued messages, `ttl`: default queue retention (seconds), `status_notifications`: boolean (server sends `wmp.message.status` notifications to sender) |
 | `resolve` | Metadata resolution (see Section 5.8) | `supported_types`: resolution types available |
 
 Additional capabilities are defined by profiles. For example, the OpenID4x profile ([wmp-openid4x.md](wmp-openid4x.md)) defines `oid4vci` and `oid4vp` capabilities.
@@ -412,6 +474,229 @@ Query the current negotiated state at any time:
 
 Reason codes: `complete`, `timeout`, `error`, `user_cancelled`.
 
+### 4.4 Authentication
+
+Authentication binds a transport connection to a participant identity. WMP defines a concrete authentication sub-protocol that runs during or immediately after session creation.
+
+#### 4.4.1 Authentication Model
+
+Authentication is **per-participant** and **per-session**. Each participant authenticates using the mechanism appropriate to their identifier scheme (Section 7.4). The protocol supports three patterns:
+
+1. **Inline authentication** — Credentials are included in `wmp.session.create`. Used when the initiator can prove identity without a challenge (e.g., bearer tokens, mTLS).
+2. **Challenge-response authentication** — The responder issues a `challenge` in the session create result. The initiator completes authentication via `wmp.session.authenticate`. Used for signature-based authentication.
+3. **Mutual authentication** — Both parties authenticate. The initiator authenticates inline or via challenge-response; the responder authenticates by including credentials in the session create result.
+
+#### 4.4.2 The `auth` Field
+
+The `wmp.session.create` params MAY include an `auth` object:
+
+```json
+{
+  "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
+  "participants": ["x509:san:dns:issuer.example.eu"],
+  "auth": {
+    "type": "bearer",
+    "token": "eyJhbGciOiJFUzI1NiIs..."
+  },
+  "capabilities_offered": {...},
+  "security": {"mode": "tls"}
+}
+```
+
+**Authentication types:**
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| `bearer` | `token` | Bearer token (JWT, opaque token, etc.). The token audience SHOULD be the responder's identifier or endpoint URL. |
+| `dpop` | `token`, `proof` | DPoP-bound token (RFC 9449). `proof` is the DPoP proof JWT. |
+| `mtls` | *(none — implicit)* | Authentication via the TLS client certificate on the transport connection. No additional fields needed; the responder verifies the certificate chain. |
+| `signed_challenge` | `signature`, `challenge` | Detached JWS (§5.4 format) over the challenge value. Used in the second round-trip after receiving a challenge. |
+| `x5c` | `x5c`, `signature`, `challenge` | X.509 certificate chain + signed challenge. The leaf certificate MUST contain a SAN matching the sender's identifier. |
+
+#### 4.4.3 Challenge-Response Flow
+
+When the responder cannot authenticate the initiator from the initial `wmp.session.create` alone (e.g., the sender uses a DID and no bearer token was provided), the responder returns a `challenge` in the session create result:
+
+```
+Initiator                              Responder
+    │                                       │
+    │── wmp.session.create ────────────────>│
+    │   {sender: "did:web:alice...",        │
+    │    auth: null}                         │
+    │                                       │
+    │<── result (session_id, challenge) ────│
+    │   {challenge: "ch-9f8e7d6c",          │
+    │    auth_required: true}               │
+    │                                       │
+    │── wmp.session.authenticate ──────────>│
+    │   {auth: {type: "signed_challenge",   │
+    │    challenge: "ch-9f8e7d6c",          │
+    │    signature: "eyJ..."}}              │
+    │                                       │
+    │<── result {authenticated: true} ──────│
+    │                                       │
+```
+
+**`wmp.session.authenticate` params:**
+
+```json
+{
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
+  "auth": {
+    "type": "signed_challenge",
+    "challenge": "ch-9f8e7d6c",
+    "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6YWxpY2UuZXhhbXBsZS5jb20ja2V5LTEiLCJiNjQiOmZhbHNlLCJjcml0IjpbImI2NCJdfQ..SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+  }
+}
+```
+
+**Challenge signature construction:**
+
+The `signed_challenge` signature is a detached JWS (same format as §5.4) where the payload `M` is the UTF-8 encoding of the following JSON object, JCS-canonicalized:
+
+```json
+{
+  "challenge": "ch-9f8e7d6c",
+  "session_id": "ses-a1b2c3d4",
+  "sender": "did:web:alice.example.com",
+  "timestamp": "2026-04-29T10:15:31Z"
+}
+```
+
+The `session_id` binding prevents replay of the signed challenge to a different session. The `timestamp` MUST be within the receiver's clock skew tolerance (§8.5).
+
+**Result:**
+
+```json
+{
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+  "authenticated": true,
+  "participant_id": "did:web:alice.example.com"
+}
+```
+
+If authentication fails, the responder returns error `-31002` (Not authorized) with diagnostic details in `data`.
+
+#### 4.4.4 `auth_required` Flag
+
+The session create result MAY include `auth_required: true` to indicate that the session is in a **pending** state and no other methods will be accepted until `wmp.session.authenticate` succeeds. Implementations MUST reject all non-authentication requests on a pending session with error `-31002`.
+
+When `auth_required` is absent or `false`, the session is immediately active (authentication was either completed inline or is not required by the responder's policy).
+
+#### 4.4.5 Responder Authentication
+
+The session create result MAY include the responder's own `auth` object for mutual authentication:
+
+```json
+{
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+  "capabilities": {...},
+  "challenge": "ch-9f8e7d6c",
+  "auth": {
+    "type": "x5c",
+    "x5c": ["MIIB...(leaf)...", "MIIC...(issuer)..."],
+    "signature": "eyJ...",
+    "challenge": "<initiator-provided nonce if sent in create params>"
+  }
+}
+```
+
+For mutual authentication, the initiator MAY include a `nonce` field in `wmp.session.create` params that the responder signs in its `auth` response.
+
+#### 4.4.6 Authentication and Identifier Schemes
+
+Each identifier scheme maps to one or more authentication types:
+
+| Scheme | Recommended auth type | Notes |
+|--------|----------------------|-------|
+| `did:web`, `did:webvh` | `signed_challenge` | Sign with key from DID Document (DID discovery profile, §7.5.4) |
+| `did:key`, `did:jwk` | `signed_challenge` | Key is inline in the DID — no resolution needed |
+| `x509:san:*` | `mtls` or `x5c` | Present certificate chain at TLS level or in `auth` field |
+| `x509:sha256:*` | `x5c` | Present certificate matching the fingerprint |
+| `uri` (HTTPS) | `bearer` or `mtls` | Bearer token from the URI authority, or TLS cert for the domain |
+| `ebcore:*` | `mtls` or `bearer` | SMP-registered certificate or SMP-issued token |
+| `opaque` | `bearer` | Session-scoped bearer token only |
+
+#### 4.4.7 Security Requirements
+
+- Challenges MUST be cryptographically random, at least 128 bits of entropy.
+- Challenges MUST be single-use. A responder MUST NOT accept the same challenge value twice.
+- Challenge validity MUST be time-bounded (RECOMMENDED: 60 seconds).
+- The `session_id` MUST be bound into the challenge-response signature to prevent cross-session replay.
+- Bearer tokens MUST be validated for audience, expiry, and issuer.
+- For `mtls`, the TLS client certificate MUST be verified against a trust anchor appropriate to the sender's identifier scheme.
+
+### 4.5 Session Resumption
+
+When a transport connection is lost (network failure, mobile app backgrounding), a client MAY resume an existing session on a new connection without repeating capability negotiation.
+
+#### 4.5.1 `wmp.session.resume`
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "resume-001",
+  "method": "wmp.session.resume",
+  "params": {
+    "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
+    "session_id": "ses-a1b2c3d4",
+    "resumption_token": "rt-base64url-encoded-token",
+    "last_received_id": "msg-550e8400"
+  }
+}
+```
+
+**Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `session_id` | string | REQUIRED | Session to resume |
+| `resumption_token` | string | REQUIRED | Opaque token issued by the server at session creation or last resume |
+| `last_received_id` | string | OPTIONAL | Last message `id` successfully received — server will replay messages after this |
+
+**Result:**
+
+```json
+{
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+  "resumed": true,
+  "resumption_token": "rt-new-token-for-next-resume",
+  "missed_messages": 3,
+  "capabilities": {...},
+  "security": {...}
+}
+```
+
+#### 4.5.2 Resumption Token
+
+The session create result SHOULD include a `resumption_token`:
+
+```json
+{
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+  "capabilities": {...},
+  "resumption_token": "rt-base64url-encoded-token"
+}
+```
+
+The token is an opaque, server-generated value that:
+- Binds to the session and the authenticated participant identity
+- Is rotated on each successful resume (one-time use)
+- Has a configurable lifetime (RECOMMENDED: equal to session TTL)
+- MUST NOT be guessable (at least 128 bits of entropy)
+
+#### 4.5.3 State Preservation
+
+On successful resumption:
+- Negotiated capabilities remain active
+- Active flows resume from their last state (no automatic restart). The responder MUST re-send the latest `wmp.flow.progress` for each active flow as part of message replay (§6.2.1).
+- The MLS epoch is preserved — the client continues with its current group state
+- The server delivers any queued messages since `last_received_id`
+
+#### 4.5.4 Resumption Failure
+
+If the token is invalid, expired, or the session no longer exists, the server returns error `-31000` (Session not found) or `-31001` (Session expired). The client MUST create a new session.
+
 ## 5. Message Delivery
 
 ### 5.1 Direct Messages
@@ -490,6 +775,51 @@ Recipients MAY acknowledge message receipt:
 
 Status values: `received`, `read`, `processed`, `failed`.
 
+#### 5.3.1 Offline Delivery and Message Status
+
+When the `offline` capability is negotiated and a recipient is disconnected, the server queues messages for later delivery. The `wmp.message.status` notification provides sender visibility into the delivery lifecycle.
+
+**Per-message expiry:** The `expires_at` field in the `wmp` metadata object (§3.2) sets a per-message deadline. If `expires_at` is set and the message is still queued at that time, the server MUST discard it. If `expires_at` is absent, the message uses the `offline.ttl` from capability negotiation. If neither is set, server-default retention applies.
+
+**`wmp.message.status` notification** (server → sender):
+
+When `status_notifications` is `true` in the negotiated `offline` capability, the server sends delivery lifecycle notifications to the sender:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "wmp.message.status",
+  "params": {
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+    "message_id": "msg-550e8400",
+    "status": "queued",
+    "recipient": "did:web:citizen.example.com",
+    "queued_until": "2026-05-03T14:10:00Z"
+  }
+}
+```
+
+**Status values:**
+
+| Status | Description |
+|--------|-------------|
+| `queued` | Message accepted and queued; recipient is offline. `queued_until` indicates the time at which the message will expire from the queue. |
+| `delivered` | Message delivered to recipient (on reconnect or when recipient comes online). |
+| `expired` | Message expired from queue before delivery. The sender MAY retry or take compensating action. |
+| `dropped` | Message dropped because the recipient's queue is full (`max_queued` exceeded). |
+
+**Semantics:**
+
+- The server sends `queued` immediately when it accepts a message for an offline recipient. The JSON-RPC result for the original `wmp.message.deliver` call confirms acceptance; the `queued` notification provides the additional detail that the recipient is offline.
+- The server sends exactly one terminal status per message: `delivered`, `expired`, or `dropped`.
+- If `status_notifications` is `false` or the `offline` capability is not negotiated, the server does best-effort delivery with no sender feedback.
+
+**Queue overflow:** When the recipient's queue reaches `max_queued`, the server rejects new messages with error `-31014` (Queue full). The sender receives this as the JSON-RPC error response to the `wmp.message.deliver` call.
+
+**Flow interaction:** When a flow is in progress and a participant goes offline, flow timeouts (§6.2.1) operate independently of the offline queue. The `expires_at` on flow-related messages SHOULD be set to match the flow timeout to avoid delivering stale flow steps.
+
+**Evidence integration:** For ERDS delivery evidence ([wmp-evidence.md](wmp-evidence.md)), the `delivered` status provides the basis for delivery evidence records. The `expired` or `dropped` statuses provide the basis for non-delivery evidence.
+
 ### 5.4 Non-Repudiation Signatures
 
 MLS provides sender authentication within a group, but MLS authentication keys are ephemeral and group-scoped — they cannot produce standalone artifacts verifiable by third parties (auditors, courts). For non-repudiation, WMP defines an optional `signature` field in the `wmp` metadata object.
@@ -542,6 +872,15 @@ The signed payload `M` is constructed as follows:
 
 1. **Extract the content object.** For requests: take the `params` JSON object and remove the `wmp` key — the remaining key/value pairs form the content object. For responses: take the `result` or `error` JSON object as-is.
 2. **Canonicalize.** Apply JCS (RFC 8785) to the content object. This produces a deterministic UTF-8 byte string `M`.
+
+**JCS compliance requirements:**
+
+Implementations MUST use a canonicalization library that is fully compliant with RFC 8785 and passes the RFC 8785 test suite (Appendix B of that RFC). In addition:
+
+- **Duplicate keys:** WMP content objects MUST NOT contain duplicate JSON keys at any nesting level. Implementations MUST reject messages with duplicate keys before canonicalization or signature verification. Signing a message with duplicate keys is a protocol error.
+- **Number range:** JSON numbers in WMP content objects that will be signed MUST be within the IEEE 754 double-precision safe integer range ($|n| \leq 2^{53} - 1$ for integers). For values outside this range, use JSON strings instead. Implementations SHOULD reject numbers outside this range in signed content.
+- **Unicode:** JCS preserves byte sequences without Unicode normalization. Implementations MUST NOT apply NFC, NFD, or other Unicode normalization to string values before or during canonicalization. Fields used in signature-critical paths SHOULD use ASCII-safe values where possible.
+- **Test vectors:** WMP implementations that produce or verify non-repudiation signatures SHOULD verify their JCS implementation against the WMP canonicalization test vectors (published as a companion document).
 
 Concretely, for a request with:
 ```json
@@ -631,7 +970,7 @@ Implementations MAY also use RFC 9162 (Certificate Transparency) signed timestam
 
 WMP identifiers (DIDs, X.509 fingerprints, etc.) are cryptographic identifiers that do not inherently bind to a legal identity. For scenarios requiring legal person identification (e.g., eIDAS ERDS, regulatory compliance), the `identity_assertions` field carries verifiable bindings between the cryptographic identifier and a legal identity.
 
-> **Note:** Identity assertions are *sender-initiated* proofs attached to messages or sessions — analogous to a TLS client certificate. For *verifier-initiated* credential requests (where a verifier asks a holder to prove specific attributes), see the `oid4vp` flow type in [wmp-openid4x.md](wmp-openid4x.md).
+> **Note:** Identity assertions are *sender-initiated* proofs attached to messages or sessions — analogous to a TLS client certificate. WMP Core does not define a mechanism for the relying party to request specific credentials or claims before the sender presents them. For *verifier-initiated* credential requests (where a verifier asks a holder to prove specific attributes), use the `oid4vp` flow type in [wmp-openid4x.md](wmp-openid4x.md). When a sender presents an assertion that does not satisfy the RP's policy, the RP rejects it with error `-31012` including diagnostic data (§5.6.2), enabling the sender to retry with an appropriate assertion. Profiles MAY extend the session create response with additional fields (e.g., `identity_assertion_requirements`) to pre-signal RP expectations.
 
 Identity assertions use a **presentation model**: the sender produces a Verifiable Presentation (VP) bound to the WMP session, rather than transmitting a raw credential. This ensures:
 
@@ -721,6 +1060,54 @@ When `trust_hints` is absent, the RP determines the applicable trust model entir
 Identity assertions are OPTIONAL in WMP Core. Profiles MAY mandate specific assertion types and require that certain trust hints be present. For example, an ERDS profile could require `verifiable_credential` with at least one `eidas_lote` hint referencing a LoTE published under the EU Trusted List framework.
 
 Identity assertions MAY be sent once during session creation and are then valid for the session lifetime, or MAY be attached to individual messages when per-message identity binding is required.
+
+#### 5.6.2 Identity Assertion Rejection
+
+When a relying party rejects an identity assertion, it MUST return error code `-31012` with a `data` object containing diagnostic information. This enables the sender to understand the rejection reason and retry with an appropriate assertion without requiring an out-of-band negotiation mechanism.
+
+**Error `data` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reason` | string | REQUIRED. Machine-readable rejection reason (see table below). |
+| `accepted_formats` | array of string | OPTIONAL. Credential formats the RP accepts (e.g., `vc+sd-jwt`, `mso_mdoc`). |
+| `required_claims` | array of string | OPTIONAL. Claim names the RP requires to be disclosed. |
+| `accepted_trust_frameworks` | array of string | OPTIONAL. Trust framework identifiers the RP recognizes. |
+| `message` | string | OPTIONAL. Human-readable diagnostic message. |
+
+**Rejection reasons:**
+
+| Reason | Description |
+|--------|-------------|
+| `unsupported_format` | The assertion format is not accepted by the RP. |
+| `insufficient_claims` | The disclosed claims do not satisfy the RP's requirements. |
+| `untrusted_issuer` | The credential issuer is not trusted under any framework accepted by the RP. |
+| `invalid_proof` | The VP proof (signature, nonce binding, or audience) is invalid. |
+| `expired` | The credential or presentation has expired. |
+| `revoked` | The credential has been revoked. |
+
+**Example rejection response:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "msg-1",
+  "error": {
+    "code": -31012,
+    "message": "Identity assertion invalid",
+    "data": {
+      "reason": "unsupported_format",
+      "accepted_formats": ["vc+sd-jwt"],
+      "required_claims": ["given_name", "family_name"],
+      "accepted_trust_frameworks": ["eidas_lote"]
+    }
+  }
+}
+```
+
+The sender MAY use the diagnostic data to construct a new identity assertion and resend the message or call `wmp.session.authenticate` (§4.4) with the corrected assertion. Implementations MUST NOT disclose sensitive policy details in the diagnostic data beyond what is necessary for the sender to construct an acceptable assertion.
+
+> **Extensibility:** The rejection diagnostic model is intentionally minimal. Profiles that require richer verifier-initiated credential negotiation (e.g., full `presentation_definition` support) SHOULD use the OID4VP flow type rather than extending the `-31012` error data.
 
 ### 5.7 Relay Provenance
 
@@ -932,9 +1319,24 @@ Initiator                         Responder
     │<─── wmp.flow.progress ──────────│  (0..n steps)
     │──── wmp.flow.action ───────────>│  (participant decisions)
     │<─── wmp.flow.progress ──────────│
-    │<─── wmp.flow.complete ──────────│  (or wmp.flow.error)
+    │<─── wmp.flow.complete ──────────│  (terminal)
+    │                                 │
+    │  ── OR (abnormal termination) ──
+    │                                 │
+    │<─── wmp.flow.error ─────────────│  (terminal)
+    │──── wmp.flow.cancel ───────────>│  (terminal)
     │                                 │
 ```
+
+**Flow states:**
+
+| State | Description |
+|-------|-------------|
+| `in_progress` | Flow is active; `wmp.flow.progress` updates may be sent. |
+| `completed` | Terminal. Flow finished successfully via `wmp.flow.complete`. |
+| `error` | Terminal. Flow failed via `wmp.flow.error`. |
+| `cancelled` | Terminal. Flow was cancelled via `wmp.flow.cancel`. |
+| `timed_out` | Terminal. Flow exceeded its `timeout`. Responder sends `wmp.flow.error` with reason `timeout`. |
 
 ### 6.2 Flow Methods
 
@@ -948,6 +1350,7 @@ Initiates a new flow. The `flow_type` identifies the type of flow and determines
 |-------|------|----------|-------------|
 | `flow_type` | string | REQUIRED | Flow type identifier |
 | `flow_id` | string | REQUIRED | Unique flow identifier (scoped to session) |
+| `timeout` | integer | OPTIONAL | Flow timeout in seconds. After expiry, the responder MUST send `wmp.flow.error` with reason `timeout`. If omitted, the profile's default timeout applies (or no timeout). |
 | `params` | object | OPTIONAL | Flow-type-specific parameters |
 
 ```json
@@ -1027,7 +1430,7 @@ Sent when a flow reaches a terminal state successfully.
 
 #### `wmp.flow.error`
 
-Sent when a flow fails.
+Sent when a flow fails. This is a terminal notification — the flow cannot be continued after this.
 
 **Params:**
 
@@ -1037,6 +1440,65 @@ Sent when a flow fails.
 | `code` | integer | REQUIRED | Error code |
 | `message` | string | REQUIRED | Error description |
 | `data` | object | OPTIONAL | Additional error context |
+
+**Well-known error reasons** (in `data.reason`):
+
+| Reason | Description |
+|--------|-------------|
+| `timeout` | The flow exceeded the `timeout` specified in `wmp.flow.start`. |
+| `invalid_state` | The flow is in a state that cannot proceed (e.g., dependency failed). |
+| `rejected` | The responder declined the flow (e.g., approval denied). |
+
+#### `wmp.flow.cancel`
+
+Sent by the initiator (or any authorized participant) to terminate a flow before completion. The responder MUST acknowledge the cancellation and treat the flow as terminal.
+
+**Params:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `flow_id` | string | REQUIRED | Flow identifier |
+| `reason` | string | OPTIONAL | Machine-readable cancellation reason (e.g., `user_cancelled`, `superseded`, `no_longer_needed`) |
+
+**Result:**
+
+```json
+{
+  "flow_id": "flow-7890",
+  "status": "cancelled"
+}
+```
+
+If the flow has already reached a terminal state (`completed`, `error`, or `cancelled`), the responder returns error `-31006` with `data.reason` set to `already_terminal`.
+
+### 6.2.1 Flow Error Recovery
+
+**Action rejection and retry:** When a `wmp.flow.action` is rejected (e.g., invalid action for the current step), the responder returns error `-31006`. The `data` object SHOULD include:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reason` | string | Machine-readable reason (e.g., `invalid_action`, `invalid_params`, `wrong_step`). |
+| `retryable` | boolean | `true` if the initiator MAY resend a corrected action; `false` if the flow has moved to an error state. |
+| `current_step` | string | The step the flow is currently in (helps the initiator understand the expected action). |
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "action-1",
+  "error": {
+    "code": -31006,
+    "message": "Flow error",
+    "data": {
+      "flow_id": "flow-7890",
+      "reason": "invalid_action",
+      "retryable": true,
+      "current_step": "awaiting_review"
+    }
+  }
+}
+```
+
+**Reconnect behavior:** When a session is resumed (§4.5), the responder MUST re-send the latest `wmp.flow.progress` notification for each active (non-terminal) flow as part of the message replay. This ensures the initiator recovers flow state without a dedicated status query method.
 
 ### 6.3 Built-in Flow Types
 
@@ -1189,45 +1651,60 @@ How a participant proves control of their identifier depends on the scheme:
 
 | Scheme | Authentication Method |
 |--------|----------------------|
-| `did` | DID Document verification key; prove control via signature |
+| `did` | DID Document verification key; prove control via signature (requires DID discovery profile, Section 7.5.4) |
 | `x509` / `x509-san` / `x509-dn` | Present X.509 certificate chain; verify against trust anchor (eIDAS trust list, national CA) |
 | `uri` | TLS certificate for the domain; or bearer token issued by the URI authority. Optionally, OpenID Federation entity statement chain via `identity_assertions`. |
 | `mdoc` | ISO 18013-5 issuer authentication (IACA certificate) |
 | `ebcore` | Mutual TLS with the certificate from SMP; or bearer token issued by the SMP authority |
 | `opaque` | Session-level authentication only (bearer token); no external identity binding |
 
-Multiple authentication methods MAY be supported simultaneously. The session creation request MAY specify which schemes are accepted:
+Multiple authentication methods MAY be supported simultaneously. The responder determines whether it can authenticate the initiator's identifier scheme based on its own policy. If the responder does not support the initiator's scheme, it MUST reject the session with error `-31002` (Not authorized).
+
+The well-known configuration (§7.5.1) advertises `accepted_schemes` so that clients can check scheme compatibility *before* attempting a connection. This is informational — the authoritative check happens during authentication (§4.4).
 
 ```json
 {
   "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
   "participants": ["x509:sha256:b3c4d5e6f7..."],
-  "accepted_schemes": ["did", "x509", "uri"],
   "capabilities_offered": {...}
 }
 ```
 
 ### 7.5 Endpoint Discovery
 
-WMP defines a single, universal discovery mechanism: the **well-known WMP configuration** at `/.well-known/wmp-configuration` on the identifier's domain. This keeps discovery orthogonal to trust — how you *find* a WMP endpoint is independent of how you *trust* the counterparty.
+WMP defines a layered discovery architecture with two co-primary mechanisms — well-known configuration for domain-based identifiers and DID Document resolution for DID identifiers — plus profile-extensible resolvers for other identifier schemes.
 
-| Identifier type | Discovery method |
-|-----------------|------------------|
-| `did:web:example.com` | Resolve domain from DID → `https://example.com/.well-known/wmp-configuration` |
-| `did:<other-method>:...` | DID Document `service` entry of type `WMPMessaging` (endpoint URL only) |
-| `x509:san:dns:example.com` | Extract domain from SAN → `https://example.com/.well-known/wmp-configuration` |
-| `x509:sha256:...` | Domain provided out-of-band or via session parameters |
-| `https://example.com` | `https://example.com/.well-known/wmp-configuration` |
-| `ebcore:...` | BDXL DNS U-NAPTR → SMP HTTP query → WMP endpoint (see [wmp-edelivery.md](wmp-edelivery.md)) |
-| `mdoc:...` | Out-of-band or via issuer metadata |
-| `opaque` | Endpoint provided during session creation |
+#### 7.5.1 Primary Mechanism: Well-Known Configuration
 
-> **Design rationale:** Discovery is intentionally decoupled from trust mechanisms. A participant's WMP endpoint is found via well-known configuration regardless of whether they participate in OpenID Federation, eIDAS trust lists, or any other trust framework. Trust is established *after* connection via `identity_assertions` and `trust_hints`.
+The primary discovery mechanism is the **well-known WMP configuration** document, served at `/.well-known/wmp-configuration` on the identifier's domain. This is the REQUIRED mechanism for all domain-based identifiers.
 
-**Well-known WMP configuration:**
+**Domain extraction rules:**
+
+| Identifier type | Domain extraction |
+|-----------------|-------------------|
+| `did:web:example.com` | Extract domain from DID: `example.com`. Also resolve DID Document (§7.5.4) — either path is valid. |
+| `did:web:example.com:users:alice` | Extract domain: `example.com`. For hosted wallets, sub-path resolution: `https://example.com/users/alice/.well-known/wmp-configuration` (see §7.5.5). Also resolve DID Document — either path is valid. |
+| `did:<other-method>:...` | Domain not extractable — use DID Document resolution (§7.5.4) or session parameters |
+| `https://example.com` | Use the host directly: `example.com` |
+| `https://example.com/path` | Use the host: `example.com` |
+| `x509:san:dns:example.com` | Use the SAN DNS value: `example.com` |
+| `x509:san:uri:https://example.com/...` | Extract the host: `example.com` |
+| `ebcore:...` | See profile-specific resolver (Section 7.5.3) |
+| `x509:sha256:...` | Domain not extractable — use session parameters or profile resolver |
+| `mdoc:...` | Domain not extractable — use session parameters or profile resolver |
+| `opaque` | No discovery — endpoint provided during session creation |
+
+For any identifier where a domain can be extracted, discovery is:
+
+```
+GET https://<domain>/.well-known/wmp-configuration
+```
+
+**Well-known WMP configuration document:**
 
 ```json
 {
+  "supported_versions": ["0.1"],
   "endpoints": {
     "websocket": "wss://example.com/wmp",
     "https": "https://example.com/wmp"
@@ -1242,9 +1719,67 @@ WMP defines a single, universal discovery mechanism: the **well-known WMP config
 }
 ```
 
-**DID Document service entry (for non-web DID methods):**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `supported_versions` | string[] | REQUIRED | Protocol versions this endpoint supports (§2.2) |
+| `endpoints` | object | REQUIRED | Map of transport type to endpoint URL |
+| `capabilities` | object | OPTIONAL | Pre-advertised capabilities (informational) |
+| `accepted_schemes` | string[] | OPTIONAL | Identifier schemes this endpoint can authenticate (pre-connect hint for clients) |
+| `security_modes` | string[] | OPTIONAL | Supported security modes |
+| `mls_key_packages` | string | OPTIONAL | URL to MLS KeyPackages endpoint |
+| `relay` | string | OPTIONAL | Default relay endpoint for this entity |
 
-For DID methods that cannot derive a domain for well-known lookup, the DID Document MAY include a service entry pointing to the WMP endpoint:
+> **Design rationale:** Discovery is intentionally decoupled from trust mechanisms. A participant's WMP endpoint is found via well-known configuration regardless of whether they participate in OpenID Federation, eIDAS trust lists, or any other trust framework. Trust is established *after* connection via `identity_assertions` and `trust_hints`.
+
+#### 7.5.2 Fallback: Session Parameters
+
+When the primary well-known mechanism cannot be used (no extractable domain, or the identifier is session-scoped), the endpoint MUST be provided explicitly during session creation via the `endpoint` field in the participant list or out-of-band configuration.
+
+#### 7.5.3 Profile-Extensible Resolvers
+
+For identifier schemes that require scheme-specific resolution logic (e.g., eDelivery BDXL/SMP lookup, or DID resolution), profiles MAY register **identifier resolvers**. A resolver maps an identifier to a WMP endpoint URL.
+
+The discovery resolution order is:
+
+1. **Co-primary (domain-based):** Extract domain → fetch `/.well-known/wmp-configuration` (§7.5.1)
+2. **Co-primary (DID):** Resolve DID Document → `WMPMessaging` service entry (§7.5.4)
+3. **Resolver chain:** Profile-registered resolvers for other identifier schemes
+4. **Fallback:** Session parameters / out-of-band configuration (§7.5.2)
+
+For DID identifiers with extractable domains (e.g., `did:web`), steps 1 and 2 are both applicable — implementations MAY use either. For non-domain DIDs (e.g., `did:key`, `did:jwk`, `did:tdw`), step 2 is the primary mechanism.
+
+A profile registers a resolver by declaring which identifier scheme prefixes it handles. The resolver returns the WMP endpoint URL (and optionally pre-fetched capabilities), or signals that it cannot resolve the identifier.
+
+**Resolver interface (informative — see go-wmp `IdentifierResolver` for the Go binding):**
+
+```
+resolve(identifier: string) → { endpoint: string, capabilities?: object } | null
+```
+
+**Standard profile resolvers:**
+
+| Profile | Scheme(s) | Resolution method |
+|---------|-----------|-------------------|
+| `did` (see Section 7.5.4) | `did:*` | DID Document `service` entry of type `WMPMessaging` |
+| `edelivery` | `ebcore:*` | BDXL DNS U-NAPTR → SMP → WMP endpoint |
+
+Profiles that define resolvers MUST document their resolution algorithm, failure modes, and caching behavior.
+
+#### 7.5.4 DID Document Discovery
+
+For DID identifiers, the DID Document is a **co-primary** discovery mechanism alongside well-known configuration. Implementations that use DID identifiers MUST support this mechanism.
+
+**Resolution algorithm:**
+
+1. Resolve the DID Document using the DID method's resolution mechanism.
+2. Search the `service` array for an entry with `type` equal to `WMPMessaging`.
+3. Extract the `serviceEndpoint` URL from the matching entry.
+4. If no `WMPMessaging` service is found and a domain is derivable from the DID (e.g., `did:web:example.com` → `example.com`), fall back to well-known configuration (§7.5.1).
+5. If no domain is derivable (e.g., `did:key`, `did:jwk`), discovery fails — the endpoint MUST be provided via session parameters (§7.5.2) or relay registration (§7.5.5).
+
+> **Note:** For `did:web` identifiers, DID Document resolution and well-known configuration typically resolve to the same endpoint since both derive from the same domain. The DID Document is authoritative when both are available and they disagree.
+
+**DID Document service entry:**
 
 ```json
 {
@@ -1256,21 +1791,137 @@ For DID methods that cannot derive a domain for well-known lookup, the DID Docum
 
 The service entry provides only the endpoint URL. Trust evaluation is performed independently via `identity_assertions` after session establishment.
 
+**Key discovery via DID Document:**
+
+When a non-repudiation signature (Section 5.4) uses a `kid` in the form of a DID URL (e.g., `did:web:alice.example.com#key-1`), the verification key is resolved by:
+
+1. Resolving the DID Document.
+2. Locating the `verificationMethod` with the matching `id`.
+3. Extracting the public key material.
+
+This is the ONLY mechanism for key discovery when `kid` is a DID URL. When `kid` uses another scheme (X.509 SKI, JWK thumbprint, HTTPS URL), the corresponding scheme-specific key resolution applies.
+
+**MLS KeyPackage discovery via DID Document:**
+
+Alternatively to the well-known `mls-key-packages` endpoint, a DID Document MAY include a service entry:
+
+```json
+{
+  "id": "did:web:alice.example.com#mls-keys",
+  "type": "MLSKeyPackages",
+  "serviceEndpoint": "https://alice.example.com/.well-known/mls-key-packages"
+}
+```
+
+This is functionally equivalent to the `mls_key_packages` field in the well-known configuration and is provided for DID ecosystems where the DID Document is the canonical metadata publication point.
+
+**Relay discovery via DID Document:**
+
+```json
+{
+  "id": "did:web:alice.example.com#relay",
+  "type": "WMPRelay",
+  "serviceEndpoint": "wss://relay.example.com/wmp"
+}
+```
+
+This is functionally equivalent to the `relay` field in the well-known configuration.
+
+#### 7.5.5 Deployment Models
+
+Different WMP participants have different infrastructure capabilities. This section describes common deployment models and their recommended discovery approach.
+
+**1. Self-hosted server (issuer, verifier, enterprise)**
+
+The participant controls a domain and runs a web server.
+
+- **Identifier:** `x509:san:dns:example.com`, `https://example.com`, or `did:web:example.com`
+- **Discovery:** Well-known configuration at `/.well-known/wmp-configuration` (§7.5.1)
+- **Example:** A government credential issuer at `gov-issuer.example.eu`
+
+**2. Hosted/cloud wallet (multi-tenant provider)**
+
+Multiple users share a single wallet backend. Each user has a distinct identifier but the provider operates the WMP endpoint.
+
+- **Identifier:** `did:web:wallet.example.com:users:alice` or similar path-based DID
+- **Discovery — DID Document (RECOMMENDED):** The provider publishes a DID Document for each user with a `WMPMessaging` service entry pointing to the provider's WMP endpoint. The `serviceEndpoint` MAY include a user-specific path (e.g., `wss://wallet.example.com/wmp/users/alice`) or the provider may route based on the `sender`/`participants` fields in the session create request.
+- **Discovery — sub-path well-known:** For `did:web` with path components, the well-known configuration MAY be served at the sub-path: `did:web:wallet.example.com:users:alice` → `https://wallet.example.com/users/alice/.well-known/wmp-configuration`. This follows `did:web` path-to-URL mapping semantics.
+- **Routing:** The provider's WMP endpoint receives the session create with the full user identifier in the `participants` field and routes internally to the correct user context.
+
+```json
+{
+  "id": "did:web:wallet.example.com:users:alice#wmp",
+  "type": "WMPMessaging",
+  "serviceEndpoint": "wss://wallet.example.com/wmp"
+}
+```
+
+**3. Mobile/native wallet (no web server)**
+
+The wallet runs on a mobile device or desktop app with no publicly reachable HTTP server.
+
+- **Identifier:** `did:key:z6Mkf...`, `did:jwk:...`, or provider-assigned `did:web`
+- **Discovery — DID Document:** The DID Document's `WMPMessaging` service entry points to a relay endpoint where the wallet has registered (see topology §6 in [wmp-transport.md](wmp-transport.md)).
+- **Discovery — session parameters:** The wallet's endpoint is provided out-of-band (e.g., in an OID4VCI credential offer URL or a QR code).
+- **Relay registration:** The wallet registers with a relay using `wmp.relay.register`. The relay acts as a rendezvous point — incoming sessions are forwarded to the wallet over the wallet's persistent connection to the relay.
+
+```json
+{
+  "id": "did:key:z6Mkf...#wmp",
+  "type": "WMPMessaging",
+  "serviceEndpoint": "wss://relay.example.com/wmp"
+}
+```
+
+**4. IoT/embedded device**
+
+- **Identifier:** Device-specific DID or X.509 device certificate
+- **Discovery:** Relay-mediated (same as mobile wallet) or session parameters from a device management system
+
+**5. Privacy-preserving (no public endpoint)**
+
+Participants who do not want a discoverable WMP endpoint.
+
+- **Identifier:** `did:key`, session-scoped `opaque`, or any identifier without a published DID Document
+- **Discovery:** Endpoint is provided exclusively via session parameters during session creation. No publicly resolvable discovery metadata is published.
+- **Trade-off:** Only works when the initiator already knows the participant's endpoint (e.g., from a prior interaction, invitation link, or out-of-band exchange).
+
 ### 7.6 Cross-Scheme Sessions
 
-A WMP session MAY include participants using different identifier schemes. For example, a wallet identified by a DID communicating with an issuer identified by an X.509 certificate:
+A WMP session MAY include participants using different identifier schemes. The protocol makes no assumption that both sides use the same identifier type — each participant is discovered and authenticated independently using its own scheme.
+
+**Example:** A wallet identified by `did:web` communicating with an issuer identified by an X.509 SAN:
 
 ```json
 {
   "wmp": {"version": "0.1", "sender": "did:web:citizen.example.com"},
-  "participants": ["x509:san:uri:https://gov-issuer.example.eu"],
-  "accepted_schemes": ["did", "x509", "x509-san"],
+  "participants": ["x509:san:dns:gov-issuer.example.eu"],
   "capabilities_offered": {
     "flows": {"max_concurrent": 5}
   },
   "security": {"mode": "tls"}
 }
 ```
+
+**Pre-connect compatibility check:** Before connecting, the wallet MAY fetch the issuer's well-known configuration and verify that `accepted_schemes` includes `"did"`. If not, the wallet knows the issuer cannot authenticate DID-based identifiers and can avoid the connection attempt.
+
+**How discovery works in this scenario:**
+
+1. **Wallet** (`did:web:citizen.example.com`): Extract domain `citizen.example.com` → fetch `https://citizen.example.com/.well-known/wmp-configuration`
+2. **Issuer** (`x509:san:dns:gov-issuer.example.eu`): Extract domain `gov-issuer.example.eu` → fetch `https://gov-issuer.example.eu/.well-known/wmp-configuration`
+
+Both participants use the same primary discovery mechanism (Section 7.5.1). The identifier scheme determines *authentication* — not discovery.
+
+**How authentication works in this scenario:**
+
+| Participant | Scheme | Authentication method |
+|-------------|--------|----------------------|
+| Wallet | `did:web` | Detached JWS signed with key from DID Document (via DID discovery profile) |
+| Issuer | `x509:san:dns` | mTLS with certificate containing the SAN, or bearer token |
+
+Each participant authenticates using the mechanism appropriate to its own identifier scheme (Section 7.4). The responder validates the initiator's scheme during authentication (§4.4) — if the responder cannot handle the initiator's scheme, it rejects the session with error `-31002`.
+
+**Key principle:** Discovery and authentication are per-participant, not per-session. A session is scheme-agnostic — it only requires that each participant can be discovered and authenticated by its counterparty. Scheme compatibility is checked at authentication time, not declared in session creation parameters.
 
 ## 8. Security Considerations
 
@@ -1280,11 +1931,17 @@ All WMP transports MUST use TLS 1.3 or later. Certificate validation MUST follow
 
 ### 8.2 Authentication
 
-Session participants MUST authenticate during session creation. Supported mechanisms:
+Session participants MUST authenticate during or immediately after session creation (Section 4.4). The authentication protocol supports inline credentials, challenge-response, and mutual authentication patterns.
 
-- Bearer token (JWT)
-- DID-based authentication (DID document verification key)
-- Mutual TLS (mTLS)
+**Core requirements:**
+
+- Every active session MUST have at least one authenticated participant (the initiator).
+- The responder SHOULD authenticate the initiator before accepting any application-level messages.
+- For relay topologies, both the sender and the relay MUST authenticate to each other (Section 8.7).
+- Authentication credentials MUST be bound to the session (via `session_id` in challenge-response signatures) to prevent cross-session replay.
+- Bearer tokens MUST have bounded lifetime and appropriate audience restrictions.
+
+Profiles MAY define additional authentication mechanisms. For example, the DID discovery profile (Section 7.5.4) enables authentication via DID Document verification keys using the `signed_challenge` auth type.
 
 ### 8.3 Authorization
 
@@ -1303,32 +1960,297 @@ This hybrid model enables a single session to carry both:
 ### 8.5 Replay Protection
 
 - Message `id` fields MUST be unique within a session.
-- Timestamps MUST be validated within a configurable clock skew tolerance (default: 5 minutes).
 - MLS epoch numbers provide additional replay protection for encrypted messages.
+
+#### 8.5.1 Timestamp Validation
+
+The self-asserted `timestamp` field (§3.2) MUST be validated against the receiver's local clock. The receiver MUST reject messages where the timestamp differs from the local clock by more than the configured **clock skew tolerance**.
+
+**Default clock skew tolerance:** 30 seconds. Implementations SHOULD use this default unless deployment conditions require a different value. Profiles MAY specify a stricter tolerance.
+
+> **Rationale:** WMP operates over persistent connections (WebSocket) or direct HTTPS — network latency is typically milliseconds. A 30-second window accommodates mobile devices with imprecise clocks while limiting the replay window. The previous 5-minute default was inherited from Kerberos-era assumptions about wide-area clock drift that do not apply to modern NTP-synchronized systems.
+
+When a timestamp fails validation, the receiver MUST return error `-31011` with a `data` object:
+
+```json
+{
+  "code": -31011,
+  "message": "Timestamp invalid",
+  "data": {
+    "reason": "clock_skew",
+    "acceptable_window_seconds": 30,
+    "server_time": "2026-05-03T14:00:00Z"
+  }
+}
+```
+
+The `server_time` field allows the sender to diagnose and correct clock drift. Implementations SHOULD log timestamp rejections for operational monitoring.
+
+#### 8.5.2 Timestamp Token Precedence
+
+When both `timestamp` (self-asserted) and `timestamp_token` (RFC 3161 from a TSA) are present on a message:
+
+1. The `timestamp_token` is **authoritative** for the message's time. The receiver validates the token against its trusted TSA list.
+2. The self-asserted `timestamp` is **informational** when a token is present — it is a convenience for display and logging but is not used for replay validation.
+3. The self-asserted `timestamp` MUST NOT differ from the time in the `timestamp_token` by more than the clock skew tolerance. If it does, the receiver SHOULD treat the self-asserted timestamp as unreliable but MUST NOT reject the message solely for this reason (the token is authoritative).
+4. When only `timestamp` is present (no token), the self-asserted value is used for replay validation against the clock skew tolerance.
+
+#### 8.5.3 Interaction with Message Expiry
+
+The `expires_at` field (§3.2, §5.3.1) and `timestamp` are independent:
+
+- A message with `timestamp` within the clock skew tolerance but `expires_at` in the past MUST be discarded (expired).
+- A message with `expires_at` in the future but `timestamp` outside the clock skew tolerance MUST be rejected with `-31011`.
+- For queued offline messages (§5.3.1), the `timestamp` validation is performed at queue insertion time, not at delivery time. A queued message whose `timestamp` was valid when queued is delivered without re-validating the timestamp on reconnect.
 
 ### 8.6 Rate Limiting
 
 Implementations SHOULD enforce rate limits per participant per session. The `-31007` error code is used to signal rate limiting.
 
+### 8.7 Session-Transport Binding
+
+A session MUST be bound to an authenticated transport context to prevent session hijacking (an attacker who learns a `session_id` injecting messages on a different connection).
+
+#### 8.7.1 Binding Mechanism
+
+When a session is created, the server binds it to the authenticated identity of the transport:
+
+| Transport | Binding mechanism |
+|-----------|-------------------|
+| WebSocket | The session is bound to the WebSocket connection. Only messages from the same connection (or a successfully resumed connection via §4.5) are accepted. |
+| HTTPS | The session is bound to the bearer token or mTLS certificate. Each HTTP request MUST present the same credential. |
+| Native messaging | The session is bound to the process identity (extension ID, socket peer credentials). |
+
+**Invariant:** A message on session `S` is accepted only if it arrives on a transport connection authenticated as the sender identity recorded for that session.
+
+#### 8.7.2 Connection Loss and Rebinding
+
+When a transport connection drops:
+1. The session enters a **suspended** state on the server.
+2. Messages for that session are queued (subject to the `offline` capability limits — see §5.3.1). Per-message `expires_at` is respected; messages without `expires_at` use the `offline.ttl` from capability negotiation.
+3. To rebind, the participant MUST use `wmp.session.resume` (§4.5) with a valid `resumption_token`.
+4. The server re-authenticates the participant during resumption (the `resumption_token` serves as proof of prior authentication).
+5. After successful resumption, the session is bound to the new transport connection and queued messages are delivered. The server sends `wmp.message.status` notifications with status `delivered` to senders for any queued messages that were successfully delivered on reconnect.
+
+A `session_id` alone is NEVER sufficient to send messages — it is not a secret and MUST NOT be treated as one. The binding is to the authenticated identity, not the session ID string.
+
+#### 8.7.3 Relay Mode Binding
+
+In relay topology (§6.2 of wmp-transport.md), each hop has its own session-transport binding:
+
+```
+Alice ←── auth binding ──→ Relay ←── auth binding ──→ Bob
+(session A-R)                      (session R-B)
+```
+
+The relay authenticates both Alice and Bob independently. The relay verifies that:
+- Messages claiming `sender: alice` arrive on Alice's authenticated connection
+- Messages claiming `sender: bob` arrive on Bob's authenticated connection
+
+A relay MUST NOT forward a message where the `wmp.sender` does not match the authenticated identity of the connection it arrived on. This prevents sender spoofing through relays.
+
+#### 8.7.4 Multiplexing Isolation
+
+When multiple sessions share a single transport connection (§3.6 of wmp-transport.md):
+- Each session retains its own independent state and security context.
+- A participant authenticated for session A is NOT automatically authorized for session B on the same connection, unless session B was also created/joined on that connection.
+- Session IDs from different connections MUST NOT be conflated.
+
+### 8.8 Relay Privacy
+
+#### 8.8.1 Threat Model
+
+In relay topology, the relay is an active intermediary with access to:
+- **Always visible:** `wmp` metadata (sender, recipient identifiers, session_id, timestamps), message sizes, timing
+- **In TLS mode:** Full message content (since the relay terminates TLS)
+- **In MLS mode:** Only routing metadata; message content is end-to-end encrypted
+
+The relay is trusted for availability (message delivery) but minimally trusted for confidentiality and integrity. The following threats apply:
+
+| Threat | MLS mode | TLS mode |
+|--------|----------|----------|
+| Content interception | Protected | **Exposed** |
+| Metadata collection (who talks to whom, when, frequency) | **Exposed** | **Exposed** |
+| Sender/recipient correlation | **Exposed** | **Exposed** |
+| Message injection | Protected (MLS authenticates senders) | **Possible** without additional signatures |
+| Selective message dropping | **Possible** (detectable via evidence profile) | **Possible** |
+| Traffic analysis (timing, size) | **Exposed** | **Exposed** |
+
+#### 8.8.2 Relay Obligations
+
+A relay implementation MUST:
+- Authenticate all connected participants before routing messages
+- Verify `wmp.sender` matches the authenticated identity on the connection (§8.7.3)
+- Not modify message content in transit (integrity)
+- Forward all messages for active sessions without selective dropping (unless rate-limited)
+
+A relay implementation MUST NOT:
+- Log or retain message content beyond what is necessary for queuing (unless operating as an evidence relay under the evidence profile)
+- Correlate identifiers across sessions unless required by law
+
+A relay implementation SHOULD:
+- Minimize metadata retention (RECOMMENDED: retain only routing state for active sessions)
+- Support configurable retention policies
+- Provide a machine-readable privacy policy at `/.well-known/wmp-configuration`:
+
+```json
+{
+  "privacy": {
+    "metadata_retention": "session_only",
+    "content_retention": "none",
+    "logging_policy": "https://relay.example.com/privacy"
+  }
+}
+```
+
+#### 8.8.3 Mitigations
+
+**For content confidentiality:** Use `mls` or `mls-optional` security mode. MLS ensures the relay cannot read message content.
+
+**For metadata privacy:** The following mitigations reduce metadata exposure:
+
+1. **Padding** — Implementations SHOULD pad messages to fixed size buckets (e.g., 1KB, 4KB, 16KB, 64KB) to resist size-based traffic analysis.
+2. **Batching** — Relay implementations MAY batch-forward messages at regular intervals rather than immediately, reducing timing correlation.
+3. **Identifier opacity** — Future versions of WMP may define a mechanism for participants to use ephemeral relay-visible identifiers that are unlinkable across sessions.
+
+**For integrity:** Use non-repudiation signatures (§5.4) on messages traversing relays. In relay mode without MLS, signatures are the primary defense against relay-injected messages.
+
+**For availability:** The evidence profile ([wmp-evidence.md](wmp-evidence.md)) provides signed delivery receipts that detect selective message dropping by relays.
+
+#### 8.8.4 Relay Selection Trust
+
+Participants SHOULD choose relays operated by entities they trust. The well-known configuration's `relay` field is self-declared — a participant chooses their own relay. Trust in the *counterparty's* relay is implicit: by communicating with a participant, you accept that their chosen relay will handle routing metadata.
+
+For high-security contexts, both parties MAY negotiate to use a mutually trusted relay via the `relay` capability parameter, or use direct topology to avoid relays entirely.
+
+### 8.9 JSON Canonicalization Security
+
+WMP uses JCS (RFC 8785) for canonicalizing content objects before signing (§5.4, §5.7) and in authentication challenge-response (§4.4). While JCS is well-specified, the following risks arise from implementation variance:
+
+**Number precision divergence.** JSON has no integer/float type distinction. Different parsers may represent the same JSON number differently — for example, JavaScript's `JSON.parse` truncates integers beyond $2^{53} - 1$ while Go's `json.Number` preserves arbitrary precision. This produces different canonical forms and causes signature verification failures. WMP mitigates this by requiring signed content to stay within the IEEE 754 safe integer range (§5.4).
+
+**Duplicate key ambiguity.** RFC 8259 recommends unique JSON keys but does not forbid duplicates. When duplicates are present, different parsers retain different values, producing different canonical output from identical input. WMP mitigates this by requiring duplicate key rejection (§5.4).
+
+**Unicode normalization variance.** JCS does not normalize Unicode — it preserves the exact byte sequence. Two strings that are canonically equivalent under NFC/NFD (e.g., `"é"` as U+00E9 vs. U+0065 U+0301) produce different JCS output and therefore different signature inputs. This is by design: JCS is a byte-level canonicalization. Implementations MUST NOT apply Unicode normalization during canonicalization. Content that requires cross-platform string equivalence SHOULD use pre-composed (NFC) form or ASCII-safe encoding.
+
+**Mitigation summary:**
+
+| Risk | Mitigation | Reference |
+|------|------------|-----------|
+| Number precision | Safe integer range constraint | §5.4 |
+| Duplicate keys | Reject before canonicalization | §5.4 |
+| Unicode normalization | No normalization; prefer ASCII-safe fields | §5.4 |
+| Non-compliant libraries | Require RFC 8785 test suite compliance | §5.4 |
+| Cross-implementation drift | WMP canonicalization test vectors | Companion document |
+
+### 8.10 Notification Authentication
+
+WMP uses JSON-RPC 2.0 notifications (messages with no `id` field, expecting no response) for several methods: `wmp.message.deliver`, `wmp.flow.progress`, `wmp.flow.complete`, `wmp.flow.error`, `wmp.flow.cancel`, `wmp.message.status`, and `wmp.message.ack`. The authentication guarantees for notifications differ by topology.
+
+#### 8.10.1 Direct Topology
+
+In direct topology, every notification arrives on a transport connection that is bound to an authenticated identity (§8.7.1). The recipient can trust that the `wmp.sender` is authentic because the transport binding was established during session creation. This provides the same authentication assurance as request-response messages.
+
+#### 8.10.2 Relay Topology
+
+In relay topology, the relay authenticates each participant independently and verifies that `wmp.sender` matches the authenticated identity of the originating connection (§8.7.3). However, the recipient has no independent cryptographic proof that the relay faithfully forwarded the notification — the relay is a trusted intermediary. This means:
+
+1. **Participant-originated notifications** (e.g., `wmp.flow.progress`, `wmp.flow.complete`, `wmp.flow.cancel`): The relay is trusted to verify the sender's identity before forwarding. A compromised relay could forge or modify these notifications. This is consistent with the relay trust model described in §8.8.4.
+
+2. **Server-originated notifications** (e.g., `wmp.message.status`): These are generated by the recipient's infrastructure, not by the remote participant. In relay mode, the relay itself may generate delivery status notifications. The sender trusts these to the extent it trusts the relay.
+
+**Mitigations:**
+
+- **Non-repudiation signatures (§5.4):** The `wmp.signature` field is valid on any WMP message, including notifications. For sessions operating through untrusted relays without MLS, implementations SHOULD apply non-repudiation signatures to flow lifecycle notifications (`wmp.flow.progress`, `wmp.flow.complete`, `wmp.flow.error`, `wmp.flow.cancel`). Recipients SHOULD verify these signatures when present.
+- **MLS end-to-end encryption:** When MLS is active, all messages — including notifications — are authenticated end-to-end. A relay cannot forge notifications within the MLS group. This is the strongest mitigation.
+- **Flow cancel authorization:** Only the flow initiator or participants named in the `wmp.flow.start` request are authorized to send `wmp.flow.cancel` for that flow. Unauthorized cancel attempts MUST be rejected with `-31002` (Not authorized).
+
+#### 8.10.3 Topology-Aware Implementation Guidance
+
+| Topology | Notification assurance | Recommended mitigation |
+|----------|----------------------|----------------------|
+| Direct | Authenticated by transport binding | None needed |
+| Relay (MLS) | End-to-end authenticated | None needed |
+| Relay (TLS only) | Trusted to relay's integrity | Non-repudiation signatures on flow notifications |
+
+Implementations that operate in relay mode without MLS SHOULD treat flow lifecycle notifications as advisory until confirmed by application-level state (e.g., verifying that a credential delivered via `wmp.flow.complete` is actually valid).
+
+### 8.11 Discovery Metadata Integrity
+
+The well-known configuration document (§7.5.1) is served as plain JSON over HTTPS. Its integrity depends on the TLS connection to the domain and the trustworthiness of the domain's DNS resolution. This is the same trust model used by OpenID Connect Discovery, OAuth Authorization Server Metadata, and similar protocols.
+
+**Threats:**
+
+- **DNS or BGP hijacking** combined with certificate misissuance could allow an attacker to serve a malicious configuration pointing to attacker-controlled endpoints or relays.
+- **CDN or reverse proxy compromise** could alter the configuration in transit between the origin server and the client.
+- **Cache poisoning** could serve stale or modified configurations after endpoint rotation.
+
+**Existing mitigations:**
+
+| Mechanism | Protection |
+|-----------|------------|
+| TLS (HTTPS) | Integrity and confidentiality in transit |
+| DNSSEC | Prevents DNS spoofing (when deployed) |
+| CAA records | Constrains certificate issuance to authorized CAs |
+| Certificate Transparency | Detects unauthorized certificate issuance |
+| DID Document discovery (§7.5.4) | Cryptographically bound metadata — the DID method's verification mechanism authenticates the document. Authoritative when both mechanisms are available (§7.5.4). |
+
+**Recommendations:**
+
+- Deployments requiring cryptographically verifiable metadata SHOULD use DID Document discovery (§7.5.4), where the DID method's native verification mechanism provides integrity guarantees independent of TLS.
+- Trust frameworks such as OpenID Federation define signed entity statements that can carry WMP endpoint metadata with hierarchical trust chains. Profiles MAY specify OpenID Federation as a metadata integrity mechanism.
+- Implementations SHOULD apply standard HTTP cache validation (ETags, `Cache-Control`) and SHOULD NOT cache well-known configurations beyond their declared freshness lifetime.
+
+### 8.12 Participant Revocation Mid-Session
+
+WMP core does not define a mechanism for removing a single participant from an active session without closing it. This section documents the gap and the available mitigations.
+
+**Two-party sessions:** The common WMP pattern is a bilateral session (wallet ↔ issuer, wallet ↔ verifier). In this case, removing one participant is equivalent to closing the session. Implementations SHOULD use `wmp.session.close` with reason `error` or `user_cancelled` when a counterparty's credentials are revoked or trust is lost.
+
+**Multi-party sessions with MLS:** When MLS is active, `wmp.mls.group.remove` ([wmp-mls.md](wmp-mls.md) §3.4) cryptographically excludes a participant from the group. After removal, the participant can no longer decrypt new messages. This is the primary mechanism for mid-session revocation in multi-party deployments. Implementations that detect credential revocation (e.g., via CRL, OCSP, or status list checks) SHOULD issue `wmp.mls.group.remove` promptly.
+
+**Multi-party sessions without MLS:** No WMP-defined removal mechanism exists. Implementations requiring this capability SHOULD either:
+1. Adopt MLS (`mls` or `mls-optional` security mode) to gain `wmp.mls.group.remove`, or
+2. Close the session and recreate it without the revoked participant.
+
+**Credential revocation detection:** WMP does not mandate continuous credential status monitoring during sessions. Implementations operating in regulated environments (e.g., eIDAS, PSD2) SHOULD define credential freshness requirements in their profile specification, including how often to check revocation status and the required response when revocation is detected.
+
+> **Future work:** A future version of WMP may define `wmp.session.remove` and `wmp.session.leave` methods with proper authorization semantics, notification to remaining participants, and interaction with active flows. Profiles requiring these semantics before standardization MAY define them under a profile-specific namespace.
+
 ## 9. Extensibility
 
-### 9.1 Custom Methods
+### 9.1 Namespace Conventions
 
-Applications MAY define custom methods under their own namespace:
+WMP uses dot-separated namespaces for both methods and capabilities. The following prefixes are reserved:
+
+| Prefix | Owner | Specification |
+|--------|-------|---------------|
+| `wmp.*` | WMP Core | This document |
+| `oid4vci.*` | WMP OpenID4x Profile | [wmp-openid4x.md](wmp-openid4x.md) |
+| `oid4vp.*` | WMP OpenID4x Profile | [wmp-openid4x.md](wmp-openid4x.md) |
+| `evidence.*` | WMP Evidence Profile | [wmp-evidence.md](wmp-evidence.md) |
+| `edelivery.*` | WMP eDelivery Profile | [wmp-edelivery.md](wmp-edelivery.md) |
+| `mcp.*` | WMP Agent capability | This document |
+
+Applications and private extensions SHOULD use reverse-domain notation to avoid collisions:
 
 ```
-wallet.credential.list
-wallet.credential.delete
 org.acme.invoice.submit
+com.example.wallet.backup
+io.siros.registry.lookup
 ```
 
-Custom methods MUST NOT use the `wmp.*` prefix.
+Short prefixes without reverse-domain notation (e.g., `wallet.*`) are acceptable for community-adopted namespaces but carry collision risk. Implementations MUST NOT use the `wmp.*` prefix for custom methods or capabilities.
 
-### 9.2 Custom Capabilities
+### 9.2 Custom Methods
 
-Custom capabilities follow the same pattern as standard capabilities and are declared during session creation.
+Applications MAY define custom methods under their own namespace. Custom methods participate in normal capability negotiation — the capability under which a custom method operates MUST be negotiated before use.
 
-### 9.3 Protocol Extensions
+### 9.3 Custom Capabilities
+
+Custom capabilities follow the same pattern as standard capabilities and are declared during session creation. The capability name SHOULD match the method namespace it governs.
+
+### 9.4 Protocol Extensions
 
 Protocol extensions are registered via capability negotiation and MUST be documented with their own specification.
 
@@ -1359,6 +2281,43 @@ All WMP implementations MUST support:
 All implementations MUST reject requests for capabilities that were not negotiated during session creation or via `wmp.capability.update` with error `-31005` (Capability not supported).
 
 All implementations MUST reject messages that violate the negotiated security mode (e.g., unencrypted messages for capabilities listed in `encrypted_capabilities`) with error `-31003` (Encryption required).
+
+## 11. IANA Considerations
+
+This document does not currently define any IANA registries. When WMP progresses toward standardization, the following registries are anticipated:
+
+### 11.1 WMP Method Namespace Registry
+
+A registry of method namespace prefixes, each with:
+- **Prefix:** The dot-separated namespace (e.g., `wmp.*`)
+- **Owning specification:** Reference to the defining document
+- **Contact:** Responsible party
+- **Registration policy:** Specification Required (for short prefixes) or First Come First Served (for reverse-domain prefixes)
+
+### 11.2 WMP Capability Registry
+
+A registry of standard capability names, each with:
+- **Name:** The capability identifier (e.g., `messaging`, `flows`, `evidence`)
+- **Owning specification:** Reference to the defining document
+- **Parameters:** Schema of the capability's negotiation parameters
+- **Registration policy:** Specification Required
+
+### 11.3 WMP Error Code Registry
+
+A registry of WMP-specific error codes (the -31xxx range), each with:
+- **Code:** The numeric error code
+- **Name:** Human-readable name
+- **Owning specification:** Reference to the defining document
+- **Registration policy:** Standards Action
+
+### 11.4 WMP Authentication Scheme Registry
+
+A registry of authentication scheme types (§4.4), each with:
+- **Type:** The scheme identifier (e.g., `bearer`, `dpop`, `mtls`, `did_auth`)
+- **Owning specification:** Reference to the defining document
+- **Registration policy:** Specification Required
+
+> **Note:** Until formal IANA registration is pursued, the namespace conventions in §9.1 and the reserved prefixes table serve as the de facto registry. Profile authors SHOULD coordinate namespace claims via the WMP specification repository.
 
 ## References
 

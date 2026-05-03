@@ -57,7 +57,7 @@ When participants in the same MLS group use different identifier schemes, each p
     "group_id": "<base64url-encoded group ID>",
     "cipher_suite": 1,
     "accepted_credential_types": ["x509", "basic"],
-    "accepted_schemes": ["did", "x509", "uri"],
+    "accepted_identity_schemes": ["did", "x509", "uri"],
     "group_info": "<base64url-encoded GroupInfo>",
     "welcomes": {
       "did:web:bob.example.com": "<base64url-encoded Welcome>",
@@ -69,7 +69,7 @@ When participants in the same MLS group use different identifier schemes, each p
 
 ### 2.3 Key Packages
 
-Participants publish MLS KeyPackages at a well-known endpoint or via their DID Document:
+Participants publish MLS KeyPackages at a well-known endpoint:
 
 **Well-known endpoint:**
 ```
@@ -90,14 +90,7 @@ GET /.well-known/mls-key-packages
 }
 ```
 
-**DID Document entry:**
-```json
-{
-  "id": "did:web:alice.example.com#mls-keys",
-  "type": "MLSKeyPackages",
-  "serviceEndpoint": "https://alice.example.com/.well-known/mls-key-packages"
-}
-```
+The well-known configuration document (see wmp-core.md Section 7.5.1) advertises this endpoint via the `mls_key_packages` field. Profiles MAY define alternative KeyPackage publication mechanisms (e.g., the DID discovery profile defines a `MLSKeyPackages` DID Document service entry; see wmp-core.md Section 7.5.4).
 
 ## 3. Group Lifecycle
 
@@ -267,16 +260,8 @@ The relay processes only the plaintext `wmp` metadata for routing. The encrypted
 ### 5.3 Relay Discovery
 
 Relays are discovered via:
-- DID Document: `WMPRelay` service type
-- Well-known configuration: `relay` field
-
-```json
-{
-  "id": "did:web:alice.example.com#relay",
-  "type": "WMPRelay",
-  "serviceEndpoint": "wss://relay.example.com/wmp"
-}
-```
+- Well-known configuration: `relay` field in `/.well-known/wmp-configuration`
+- Profile-specific resolvers (e.g., the DID discovery profile defines a `WMPRelay` DID Document service type; see wmp-core.md Section 7.5.4)
 
 ### 5.4 Message Queuing
 
@@ -317,7 +302,7 @@ The relay queues messages for offline participants. When a participant reconnect
 
 The MLS Authentication Service (AS) validates participant credentials. In WMP, this maps to:
 
-- Verifying DID ownership (DID resolution + proof of control)
+- Verifying identifier control (scheme-specific authentication; see wmp-core.md Section 7.4)
 - Validating X.509 certificates in MLS credentials
 - Checking trust lists for organizational participants
 
@@ -326,7 +311,7 @@ The MLS Authentication Service (AS) validates participant credentials. In WMP, t
 WMP leverages the existing trust infrastructure:
 
 - **Trust lists** — Organizational participants verified against trust lists
-- **DID resolution** — `did:web` and `did:webvh` resolved and verified
+- **Identifier resolution** — Scheme-specific resolution (e.g., DID resolution for `did:*` identifiers via the DID discovery profile)
 - **Key attestation** — Hardware-bound keys verified via attestation
 
 ## 7. Security Considerations

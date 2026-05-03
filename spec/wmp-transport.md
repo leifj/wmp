@@ -241,9 +241,116 @@ For local inter-process communication with higher throughput:
 - Unix domain sockets MUST use filesystem permissions to restrict access.
 - Stdio transport inherits the security context of the parent process.
 
-## 6. Transport Negotiation
+## 6. Connection Topologies
 
-### 6.1 Capability Advertisement
+WMP supports three connection topologies. The topology determines who initiates the transport connection and how messages are routed.
+
+### 6.1 Direct Topology
+
+Both parties are network-reachable. The initiator opens a transport connection directly to the responder's endpoint (discovered via `/.well-known/wmp-configuration`).
+
+```
+   Initiator ──────────────────> Responder
+   (connects outbound to        (listens on advertised
+    responder's endpoint)        WMP endpoint)
+```
+
+**When to use:** Server-to-server, wallet-to-backend (e.g., OID4VCI flows where the wallet connects to the issuer), or any scenario where the responder has a publicly-reachable endpoint.
+
+**Connection direction:** Initiator → Responder.
+
+### 6.2 Relay Topology
+
+One or both parties cannot accept inbound connections (mobile apps, browser extensions, NATed devices). Both parties connect **outbound** to a shared relay.
+
+```
+   Initiator ───────> Relay <─────── Responder
+   (outbound WS)              (outbound WS)
+```
+
+**When to use:** Wallet-to-wallet communication, mobile-to-mobile, any scenario where at least one party cannot be directly reached.
+
+**Connection direction:** Both parties → Relay (outbound). Neither party needs to accept inbound connections.
+
+**How it works:**
+
+1. Both parties discover their relay endpoint (via `relay` field in `/.well-known/wmp-configuration` or profile-specific resolver).
+2. Both parties maintain a persistent outbound connection (WebSocket or SSE) to their relay.
+3. The initiator sends `wmp.session.create` addressed to the responder's identifier.
+4. The relay resolves the responder's relay endpoint (which may be the same relay or a different one) and routes the session creation.
+5. If the responder's relay is different, inter-relay routing occurs (relay-to-relay connection).
+
+**Relay pairing:** A participant's relay is determined by their `/.well-known/wmp-configuration`:
+
+```json
+{
+  "endpoints": {
+    "websocket": "wss://relay.example.com/wmp"
+  },
+  "relay": "wss://relay.example.com/wmp"
+}
+```
+
+When the `relay` field equals an endpoint in `endpoints`, the participant is indicating they receive messages through that relay (they connect outbound and listen for inbound session requests).
+
+**Multi-relay routing:**
+
+```
+Alice's Wallet ──> Alice's Relay ──> Bob's Relay <── Bob's Wallet
+                   (relay-to-relay federation)
+```
+
+Inter-relay routing uses standard WMP transport (one relay connects to the other's endpoint). The relay chain (§5.7 of wmp-core.md) records the path.
+
+### 6.3 Hybrid Topology
+
+The initiator connects directly to the responder's endpoint, but the responder delivers messages to third parties via relay:
+
+```
+Wallet ────────> Backend ────────> Relay <──── Other Wallet
+(direct to       (processes         (relays to
+ backend)        and forwards)      third party)
+```
+
+**When to use:** Wallet-to-backend-to-wallet flows (e.g., an issuer backend orchestrating credential issuance, then routing a message to another wallet).
+
+### 6.4 Topology Discovery
+
+A participant's well-known configuration implicitly declares the topology:
+
+| Configuration | Implied topology |
+|---------------|------------------|
+| `endpoints` has a publicly-reachable URL, no `relay` field | Direct — this entity accepts inbound connections |
+| `endpoints` and `relay` both present, pointing to same host | Relay — this entity connects outbound to its relay |
+| `endpoints` has a publicly-reachable URL AND `relay` present | Hybrid — accepts direct connections AND uses relay for outbound to others |
+
+Implementations MUST support at least one of: (a) accepting inbound connections (server mode), or (b) connecting outbound to a relay (client mode). Consumer wallets typically implement only client mode.
+
+### 6.5 Relay Registration
+
+A participant registers with their relay by connecting and sending `wmp.relay.register`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "reg-001",
+  "method": "wmp.relay.register",
+  "params": {
+    "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
+    "auth": {
+      "type": "signed_challenge",
+      "challenge": "<relay-provided challenge>",
+      "signature": "eyJ..."
+    }
+  }
+}
+```
+
+After successful registration, the relay routes incoming messages for that identifier to this connection. If the connection drops, the relay queues messages until the participant reconnects and resumes (§4.5 of wmp-core.md).
+
+## 7. Transport Negotiation
+
+### 7.1 Capability Advertisement
 
 The well-known configuration (Section 7.5 of [wmp-core.md](wmp-core.md)) advertises supported transports:
 
@@ -259,11 +366,11 @@ The well-known configuration (Section 7.5 of [wmp-core.md](wmp-core.md)) adverti
 }
 ```
 
-### 6.2 Upgrade
+### 7.2 Upgrade
 
 A session started on one transport MAY be migrated to another by initiating a new transport connection and using `wmp.session.resume`.
 
-## 7. Comparison of Transport Bindings
+## 8. Comparison of Transport Bindings
 
 | Feature | WebSocket | HTTPS | Native Messaging |
 |---------|-----------|-------|-----------------|

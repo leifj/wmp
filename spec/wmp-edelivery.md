@@ -282,7 +282,6 @@ Sender                          BDXL/SMP              Recipient's WMP Endpoint
   │  6. wmp.session.create                                  │
   │     {sender: "ebcore:...",                              │
   │      participants: ["ebcore:..."],                      │
-  │      accepted_schemes: ["ebcore", "x509"],              │
   │      capabilities_offered: {...}}                       │
   │─────────────────────────────────────────────────────────►│
   │                                                          │
@@ -304,7 +303,6 @@ An eDelivery-registered organization communicating with a DID-identified wallet:
   "params": {
     "wmp": {"version": "0.1", "sender": "did:web:citizen.example.com"},
     "participants": ["ebcore:iso6523:0007:5567164818"],
-    "accepted_schemes": ["did", "ebcore", "x509"],
     "capabilities_offered": {
       "oid4vci": {
         "supported_formats": ["vc+sd-jwt"],
