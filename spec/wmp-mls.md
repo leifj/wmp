@@ -60,8 +60,8 @@ When participants in the same MLS group use different identifier schemes, each p
     "accepted_identity_schemes": ["did", "x509", "uri"],
     "group_info": "<base64url-encoded GroupInfo>",
     "welcomes": {
-      "did:web:bob.example.com": "<base64url-encoded Welcome>",
-      "x509:san:uri:https://org.example.eu": "<base64url-encoded Welcome>"
+      "did:key:z6MkfBob...": "<base64url-encoded Welcome>",
+      "x509:san:dns:org.example.eu": "<base64url-encoded Welcome>"
     }
   }
 }
@@ -114,8 +114,8 @@ When a session with `"encryption": "mls"` is created, the initiator:
     "cipher_suite": 1,
     "group_info": "<base64url-encoded GroupInfo>",
     "welcomes": {
-      "did:web:bob.example.com": "<base64url-encoded Welcome>",
-      "did:web:carol.example.com": "<base64url-encoded Welcome>"
+      "did:key:z6MkfBob...": "<base64url-encoded Welcome>",
+      "did:key:z6MkfCarol...": "<base64url-encoded Welcome>"
     }
   }
 }
@@ -131,7 +131,7 @@ A participant joins by processing the Welcome message:
   "id": "mls-join-1",
   "method": "wmp.mls.group.join",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:bob.example.com"},
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:key:z6MkfBob..."},
     "welcome_processed": true
   }
 }
@@ -145,8 +145,8 @@ A participant joins by processing the Welcome message:
   "id": "mls-add-1",
   "method": "wmp.mls.group.add",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
-    "participant": "did:web:dave.example.com",
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:wallet.example.com"},
+    "participant": "did:key:z6MkfDave...",
     "commit": "<base64url-encoded MLS Commit>",
     "welcome": "<base64url-encoded Welcome>"
   }
@@ -161,8 +161,8 @@ A participant joins by processing the Welcome message:
   "id": "mls-remove-1",
   "method": "wmp.mls.group.remove",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
-    "participant": "did:web:carol.example.com",
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:wallet.example.com"},
+    "participant": "did:key:z6MkfCarol...",
     "commit": "<base64url-encoded MLS Commit>"
   }
 }
@@ -177,7 +177,7 @@ Participants SHOULD perform regular key updates for post-compromise security:
   "jsonrpc": "2.0",
   "method": "wmp.mls.group.update",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com", "epoch": 4},
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:wallet.example.com", "epoch": 4},
     "commit": "<base64url-encoded MLS Commit>"
   }
 }

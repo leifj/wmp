@@ -293,7 +293,7 @@ Sender                          BDXL/SMP              Recipient's WMP Endpoint
 
 ### 5.2 Cross-Scheme Session: ebCore + DID
 
-An eDelivery-registered organization communicating with a DID-identified wallet:
+An eDelivery-registered organization communicating with a wallet unit (routed via the wallet provider's relay):
 
 ```json
 {
@@ -301,7 +301,7 @@ An eDelivery-registered organization communicating with a DID-identified wallet:
   "id": "ses-1",
   "method": "wmp.session.create",
   "params": {
-    "wmp": {"version": "0.1", "sender": "did:web:citizen.example.com"},
+    "wmp": {"version": "0.1", "sender": "did:key:z6MkfCitizen..."},
     "participants": ["ebcore:iso6523:0007:5567164818"],
     "capabilities_offered": {
       "oid4vci": {

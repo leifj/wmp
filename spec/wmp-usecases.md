@@ -18,14 +18,14 @@ Two wallet holders communicate directly through their wallet applications. Messa
 
 ### 2.2 Session Establishment
 
-Alice wants to message Bob. Both have wallets with DID-based identifiers.
+Alice wants to message Bob. Both have wallets managed by wallet providers. Alice's wallet is hosted by `wallet-a.example.com` and Bob's by `wallet-b.example.com`. Each user's wallet unit uses a `did:key` identifier; discovery routes through the provider's relay.
 
 ```
 Alice's Wallet          Relay           Bob's Wallet
       │                   │                   │
       │── wmp.session.create ──>│              │
       │   {participants:        │              │
-      │    ["did:web:bob..."]}  │              │
+      │    ["did:key:z6Mkf..."]}│              │
       │                   │                   │
       │   (relay fetches Bob's KeyPackage)     │
       │                   │                   │
@@ -54,7 +54,7 @@ Alice's Wallet          Relay           Bob's Wallet
   "jsonrpc": "2.0",
   "method": "wmp.message.deliver",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-h2h-001", "sender": "did:web:alice.example.com"},
+    "wmp": {"version": "0.1", "session_id": "ses-h2h-001", "sender": "did:key:z6MkfAlice..."},
     "content_type": "text/plain",
     "body": "Hello Bob!"
   }
@@ -172,7 +172,7 @@ Organizations can define custom flows for document submission:
   "jsonrpc": "2.0",
   "method": "wmp.flow.start",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-org-001", "sender": "did:web:user.example.com"},
+    "wmp": {"version": "0.1", "session_id": "ses-org-001", "sender": "did:key:z6MkfUser..."},
     "flow_type": "document_submission",
     "flow_id": "flow-doc-001",
     "params": {
@@ -196,7 +196,7 @@ Organizations can push status updates to the user's wallet:
   "jsonrpc": "2.0",
   "method": "wmp.message.deliver",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-org-001", "sender": "did:web:agency.gov"},
+    "wmp": {"version": "0.1", "session_id": "ses-org-001", "sender": "x509:san:dns:agency.gov"},
     "content_type": "application/json",
     "body": {
       "type": "status_update",
