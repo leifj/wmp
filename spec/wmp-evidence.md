@@ -152,8 +152,8 @@ Evidence is delivered as a WMP notification:
       "evidence_id": "evi-7f8e9d0c-b1a2-43e5-8f6d-7e8a9b0c1d2e",
       "event_type": "delivery_confirmed",
       "original_message_id": "msg-550e8400-e29b-41d4-a716-446655440000",
-      "original_sender": "did:web:alice.example.com",
-      "original_recipient": "did:web:bob.example.com",
+      "original_sender": "did:key:z6MkfAlice...",
+      "original_recipient": "did:key:z6MkfBob...",
       "original_content_hash": {
         "algorithm": "sha-256",
         "value": "base64url-encoded-hash"
@@ -237,7 +237,7 @@ If no session exists (e.g., relay generating evidence for the sender after sessi
   "method": "wmp.session.create",
   "params": {
     "wmp": {"version": "0.1", "sender": "x509:san:dns:relay-a.example.com"},
-    "participants": ["did:web:alice.example.com"],
+    "participants": ["did:key:z6MkfAlice..."],
     "capabilities_offered": {
       "evidence": {
         "event_types": ["delivery_confirmed", "delivery_failed"]
@@ -257,7 +257,7 @@ Recipients MUST acknowledge evidence receipt:
   "jsonrpc": "2.0",
   "method": "wmp.evidence.ack",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-ev-001", "sender": "did:web:alice.example.com"},
+    "wmp": {"version": "0.1", "session_id": "ses-ev-001", "sender": "did:key:z6MkfAlice..."},
     "evidence_ids": ["evi-7f8e9d0c-b1a2-43e5-8f6d-7e8a9b0c1d2e"],
     "status": "accepted"
   }

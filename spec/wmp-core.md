@@ -144,7 +144,7 @@ All WMP messages are valid JSON-RPC 2.0 messages. WMP uses the `params` object t
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com",
+      "sender": "x509:san:dns:alice.example.com",
       "timestamp": "2026-04-29T10:15:30Z"
     },
     ...method-specific parameters
@@ -179,7 +179,7 @@ All WMP messages are valid JSON-RPC 2.0 messages. WMP uses the `params` object t
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com",
+      "sender": "x509:san:dns:alice.example.com",
       "timestamp": "2026-04-29T10:15:32Z"
     },
     ...notification parameters
@@ -284,8 +284,8 @@ Initiator                         Responder
 
 ```json
 {
-  "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
-  "participants": ["did:web:bob.example.com"],
+  "wmp": {"version": "0.1", "sender": "x509:san:dns:wallet.example.com"},
+  "participants": ["x509:san:dns:issuer.example.eu"],
   "capabilities_offered": {
     "messaging": {"max_size": 65536},
     "flows": {"max_concurrent": 5},
@@ -399,7 +399,7 @@ Capabilities can be renegotiated mid-session (e.g., upgrading to MLS after initi
   "id": "cap-update-1",
   "method": "wmp.capability.update",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:alice.example.com"},
     "add": {
       "relay": {"destinations": ["did:web:carol.example.com"]}
     },
@@ -466,7 +466,7 @@ Query the current negotiated state at any time:
   "jsonrpc": "2.0",
   "method": "wmp.session.close",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:alice.example.com"},
     "reason": "complete"
   }
 }
@@ -492,7 +492,7 @@ The `wmp.session.create` params MAY include an `auth` object:
 
 ```json
 {
-  "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
+  "wmp": {"version": "0.1", "sender": "x509:san:dns:alice.example.com"},
   "participants": ["x509:san:dns:issuer.example.eu"],
   "auth": {
     "type": "bearer",
@@ -541,7 +541,7 @@ Initiator                              Responder
 
 ```json
 {
-  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:alice.example.com"},
   "auth": {
     "type": "signed_challenge",
     "challenge": "ch-9f8e7d6c",
@@ -558,7 +558,7 @@ The `signed_challenge` signature is a detached JWS (same format as §5.4) where 
 {
   "challenge": "ch-9f8e7d6c",
   "session_id": "ses-a1b2c3d4",
-  "sender": "did:web:alice.example.com",
+  "sender": "x509:san:dns:alice.example.com",
   "timestamp": "2026-04-29T10:15:31Z"
 }
 ```
@@ -571,7 +571,7 @@ The `session_id` binding prevents replay of the signed challenge to a different 
 {
   "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
   "authenticated": true,
-  "participant_id": "did:web:alice.example.com"
+  "participant_id": "x509:san:dns:alice.example.com"
 }
 ```
 
@@ -609,10 +609,10 @@ Each identifier scheme maps to one or more authentication types:
 
 | Scheme | Recommended auth type | Notes |
 |--------|----------------------|-------|
-| `did:web`, `did:webvh` | `signed_challenge` | Sign with key from DID Document (DID discovery profile, §7.5.4) |
-| `did:key`, `did:jwk` | `signed_challenge` | Key is inline in the DID — no resolution needed |
-| `x509:san:*` | `mtls` or `x5c` | Present certificate chain at TLS level or in `auth` field |
+| `x509:san:*` | `mtls` or `x5c` | Present certificate chain at TLS level or in `auth` field. RECOMMENDED for server-side entities (issuers, verifiers, wallet providers). |
 | `x509:sha256:*` | `x5c` | Present certificate matching the fingerprint |
+| `did:web`, `did:webvh` | `signed_challenge` | Sign with key from DID Document (DID profile resolver, §7.5.4) |
+| `did:key`, `did:jwk` | `signed_challenge` | Key is inline in the DID — no resolution needed. Appropriate for wallet units and non-public endpoints. |
 | `uri` (HTTPS) | `bearer` or `mtls` | Bearer token from the URI authority, or TLS cert for the domain |
 | `ebcore:*` | `mtls` or `bearer` | SMP-registered certificate or SMP-issued token |
 | `opaque` | `bearer` | Session-scoped bearer token only |
@@ -638,7 +638,7 @@ When a transport connection is lost (network failure, mobile app backgrounding),
   "id": "resume-001",
   "method": "wmp.session.resume",
   "params": {
-    "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
+    "wmp": {"version": "0.1", "sender": "x509:san:dns:alice.example.com"},
     "session_id": "ses-a1b2c3d4",
     "resumption_token": "rt-base64url-encoded-token",
     "last_received_id": "msg-550e8400"
@@ -711,9 +711,9 @@ Point-to-point messages within a session:
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com"
+      "sender": "x509:san:dns:alice.example.com"
     },
-    "to": ["did:web:bob.example.com"],
+    "to": ["x509:san:dns:bob.example.com"],
     "content_type": "application/json",
     "body": { ... }
   }
@@ -739,7 +739,7 @@ When MLS is active, the message content is encrypted inside the JSON-RPC envelop
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com",
+      "sender": "x509:san:dns:alice.example.com",
       "encrypted": true,
       "epoch": 3
     },
@@ -766,7 +766,7 @@ Recipients MAY acknowledge message receipt:
   "jsonrpc": "2.0",
   "method": "wmp.message.ack",
   "params": {
-    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:bob.example.com"},
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:bob.example.com"},
     "message_ids": ["msg-550e8400-e29b-41d4-a716-446655440000"],
     "status": "received"
   }
@@ -834,11 +834,11 @@ The `signature` field carries a **detached JWS** (RFC 7515 Appendix F) over the 
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com",
+      "sender": "x509:san:dns:alice.example.com",
       "timestamp": "2026-04-29T10:15:30Z",
       "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6YWxpY2UuZXhhbXBsZS5jb20ja2V5LTEifQ..SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
     },
-    "to": ["did:web:bob.example.com"],
+    "to": ["x509:san:dns:bob.example.com"],
     "content_type": "application/json",
     "body": { ... }
   }
@@ -944,11 +944,11 @@ The `timestamp` field in `wmp` metadata is self-asserted by the sender. For lega
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com",
+      "sender": "x509:san:dns:alice.example.com",
       "timestamp": "2026-04-29T10:15:30Z",
       "timestamp_token": "<base64url-encoded RFC 3161 TimeStampToken>"
     },
-    "to": ["did:web:bob.example.com"],
+    "to": ["x509:san:dns:bob.example.com"],
     "content_type": "application/json",
     "body": { ... }
   }
@@ -992,7 +992,7 @@ Each identity assertion has a `type` indicating the assertion mechanism, and an 
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com",
+      "sender": "x509:san:dns:alice.example.com",
       "identity_assertions": [
         {
           "type": "verifiable_presentation",
@@ -1016,7 +1016,7 @@ Each identity assertion has a `type` indicating the assertion mechanism, and an 
         }
       ]
     },
-    "to": ["did:web:bob.example.com"],
+    "to": ["x509:san:dns:bob.example.com"],
     "content_type": "application/json",
     "body": { ... }
   }
@@ -1121,7 +1121,7 @@ When a message traverses multiple WMP relays, each relay appends an entry to the
     "wmp": {
       "version": "0.1",
       "session_id": "ses-a1b2c3d4",
-      "sender": "did:web:alice.example.com",
+      "sender": "x509:san:dns:alice.example.com",
       "relay_chain": [
         {
           "relay": "wss://relay-a.example.com/wmp",
@@ -1137,7 +1137,7 @@ When a message traverses multiple WMP relays, each relay appends an entry to the
         }
       ]
     },
-    "to": ["did:web:bob.example.com"],
+    "to": ["x509:san:dns:bob.example.com"],
     "content_type": "application/json",
     "body": { ... }
   }
@@ -1355,7 +1355,7 @@ Initiates a new flow. The `flow_type` identifies the type of flow and determines
 
 ```json
 {
-  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:alice.example.com"},
   "flow_type": "approval",
   "flow_id": "flow-7890",
   "params": {
@@ -1387,7 +1387,7 @@ Sent by the responder to update the initiator on flow state. MAY be sent zero or
     "flow_id": "flow-7890",
     "step": "awaiting_review",
     "payload": {
-      "reviewer": "did:web:bob.example.com",
+      "reviewer": "x509:san:dns:bob.example.com",
       "deadline": "2026-05-01T00:00:00Z"
     }
   }
@@ -1408,7 +1408,7 @@ Sent by a participant to provide input or make a decision within a flow.
 
 ```json
 {
-  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "did:web:alice.example.com"},
+  "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4", "sender": "x509:san:dns:alice.example.com"},
   "flow_id": "flow-7890",
   "action": "approve",
   "params": {
@@ -1620,7 +1620,7 @@ The `sender` field in the `wmp` metadata object carries the participant's identi
   "wmp": {
     "version": "0.1",
     "session_id": "ses-a1b2c3d4",
-    "sender": "did:web:alice.example.com"
+    "sender": "x509:san:dns:alice.example.com"
   }
 }
 ```
@@ -1651,8 +1651,8 @@ How a participant proves control of their identifier depends on the scheme:
 
 | Scheme | Authentication Method |
 |--------|----------------------|
-| `did` | DID Document verification key; prove control via signature (requires DID discovery profile, Section 7.5.4) |
-| `x509` / `x509-san` / `x509-dn` | Present X.509 certificate chain; verify against trust anchor (eIDAS trust list, national CA) |
+| `x509` / `x509-san` / `x509-dn` | Present X.509 certificate chain; verify against trust anchor (eIDAS trust list, national CA). RECOMMENDED for server-side entities. |
+| `did` | DID Document verification key; prove control via signature (requires DID profile resolver, Section 7.5.4). `did:key` and `did:jwk` have inline keys — no resolution needed. |
 | `uri` | TLS certificate for the domain; or bearer token issued by the URI authority. Optionally, OpenID Federation entity statement chain via `identity_assertions`. |
 | `mdoc` | ISO 18013-5 issuer authentication (IACA certificate) |
 | `ebcore` | Mutual TLS with the certificate from SMP; or bearer token issued by the SMP authority |
@@ -1664,15 +1664,17 @@ The well-known configuration (§7.5.1) advertises `accepted_schemes` so that cli
 
 ```json
 {
-  "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
-  "participants": ["x509:sha256:b3c4d5e6f7..."],
+  "wmp": {"version": "0.1", "sender": "x509:san:dns:wallet.example.com"},
+  "participants": ["x509:san:dns:issuer.example.eu"],
   "capabilities_offered": {...}
 }
 ```
 
 ### 7.5 Endpoint Discovery
 
-WMP defines a layered discovery architecture with two co-primary mechanisms — well-known configuration for domain-based identifiers and DID Document resolution for DID identifiers — plus profile-extensible resolvers for other identifier schemes.
+WMP defines a layered discovery architecture with a single primary mechanism — well-known configuration for domain-based identifiers — plus profile-extensible resolvers for identifier schemes that require scheme-specific resolution (DID Documents, eDelivery SMP, etc.).
+
+> **Privacy principle:** Endpoints are associated with **service providers** (wallet providers, issuers, verifiers), not with individual users or wallet units. Discovery MUST NOT require or assume the availability of public per-user metadata (such as per-user DID Documents or per-user well-known configurations). The binding between a user and their wallet provider is private information. Relaying bridges the provider's endpoint to the correct wallet unit internally.
 
 #### 7.5.1 Primary Mechanism: Well-Known Configuration
 
@@ -1682,13 +1684,13 @@ The primary discovery mechanism is the **well-known WMP configuration** document
 
 | Identifier type | Domain extraction |
 |-----------------|-------------------|
-| `did:web:example.com` | Extract domain from DID: `example.com`. Also resolve DID Document (§7.5.4) — either path is valid. |
-| `did:web:example.com:users:alice` | Extract domain: `example.com`. For hosted wallets, sub-path resolution: `https://example.com/users/alice/.well-known/wmp-configuration` (see §7.5.5). Also resolve DID Document — either path is valid. |
-| `did:<other-method>:...` | Domain not extractable — use DID Document resolution (§7.5.4) or session parameters |
-| `https://example.com` | Use the host directly: `example.com` |
-| `https://example.com/path` | Use the host: `example.com` |
 | `x509:san:dns:example.com` | Use the SAN DNS value: `example.com` |
 | `x509:san:uri:https://example.com/...` | Extract the host: `example.com` |
+| `https://example.com` | Use the host directly: `example.com` |
+| `https://example.com/path` | Use the host: `example.com` |
+| `did:web:example.com` | Extract domain from DID: `example.com` |
+| `did:web:example.com:path:...` | Extract domain: `example.com` (path components are ignored for discovery — the endpoint is the provider's, not a per-user path) |
+| `did:<other-method>:...` | Domain not extractable — use DID profile resolver (§7.5.4) or session parameters |
 | `ebcore:...` | See profile-specific resolver (Section 7.5.3) |
 | `x509:sha256:...` | Domain not extractable — use session parameters or profile resolver |
 | `mdoc:...` | Domain not extractable — use session parameters or profile resolver |
@@ -1737,16 +1739,15 @@ When the primary well-known mechanism cannot be used (no extractable domain, or 
 
 #### 7.5.3 Profile-Extensible Resolvers
 
-For identifier schemes that require scheme-specific resolution logic (e.g., eDelivery BDXL/SMP lookup, or DID resolution), profiles MAY register **identifier resolvers**. A resolver maps an identifier to a WMP endpoint URL.
+For identifier schemes that require scheme-specific resolution logic (e.g., DID Document resolution, eDelivery BDXL/SMP lookup), profiles MAY register **identifier resolvers**. A resolver maps an identifier to a WMP endpoint URL.
 
 The discovery resolution order is:
 
-1. **Co-primary (domain-based):** Extract domain → fetch `/.well-known/wmp-configuration` (§7.5.1)
-2. **Co-primary (DID):** Resolve DID Document → `WMPMessaging` service entry (§7.5.4)
-3. **Resolver chain:** Profile-registered resolvers for other identifier schemes
-4. **Fallback:** Session parameters / out-of-band configuration (§7.5.2)
+1. **Primary (domain-based):** Extract domain → fetch `/.well-known/wmp-configuration` (§7.5.1)
+2. **Resolver chain:** Profile-registered resolvers for identifier schemes without extractable domains
+3. **Fallback:** Session parameters / out-of-band configuration (§7.5.2)
 
-For DID identifiers with extractable domains (e.g., `did:web`), steps 1 and 2 are both applicable — implementations MAY use either. For non-domain DIDs (e.g., `did:key`, `did:jwk`, `did:tdw`), step 2 is the primary mechanism.
+For DID identifiers with extractable domains (e.g., `did:web`), step 1 applies directly — the DID profile resolver (step 2) is not needed. For non-domain DIDs (e.g., `did:key`, `did:jwk`, `did:tdw`), the DID profile resolver is used.
 
 A profile registers a resolver by declaring which identifier scheme prefixes it handles. The resolver returns the WMP endpoint URL (and optionally pre-fetched capabilities), or signals that it cannot resolve the identifier.
 
@@ -1765,9 +1766,11 @@ resolve(identifier: string) → { endpoint: string, capabilities?: object } | nu
 
 Profiles that define resolvers MUST document their resolution algorithm, failure modes, and caching behavior.
 
-#### 7.5.4 DID Document Discovery
+#### 7.5.4 DID Profile Resolver
 
-For DID identifiers, the DID Document is a **co-primary** discovery mechanism alongside well-known configuration. Implementations that use DID identifiers MUST support this mechanism.
+For DID identifiers without an extractable domain (e.g., `did:key`, `did:jwk`, `did:tdw`), the DID Document provides a **profile-specific resolver** for endpoint discovery. This mechanism is registered as a standard profile resolver (§7.5.3).
+
+For DID identifiers with an extractable domain (e.g., `did:web`, `did:webvh`), well-known configuration (§7.5.1) is the primary discovery mechanism. DID Document resolution MAY be used as a supplementary source but is not required.
 
 **Resolution algorithm:**
 
@@ -1777,7 +1780,9 @@ For DID identifiers, the DID Document is a **co-primary** discovery mechanism al
 4. If no `WMPMessaging` service is found and a domain is derivable from the DID (e.g., `did:web:example.com` → `example.com`), fall back to well-known configuration (§7.5.1).
 5. If no domain is derivable (e.g., `did:key`, `did:jwk`), discovery fails — the endpoint MUST be provided via session parameters (§7.5.2) or relay registration (§7.5.5).
 
-> **Note:** For `did:web` identifiers, DID Document resolution and well-known configuration typically resolve to the same endpoint since both derive from the same domain. The DID Document is authoritative when both are available and they disagree.
+> **Note:** For `did:web` identifiers, well-known configuration is preferred because both mechanisms derive from the same domain. The DID Document MAY be used for key discovery (below) even when endpoint discovery uses well-known configuration.
+
+> **Privacy note:** DID Documents that encode per-user endpoint information (e.g., `did:web:wallet.example.com:users:alice` with a per-user `WMPMessaging` service entry) publicly expose the user-to-provider binding. This is a privacy violation in most wallet deployments. See §7.5.5 for the recommended architecture where endpoints are associated with wallet providers, not individual users.
 
 **DID Document service entry:**
 
@@ -1807,82 +1812,105 @@ Alternatively to the well-known `mls-key-packages` endpoint, a DID Document MAY 
 
 ```json
 {
-  "id": "did:web:alice.example.com#mls-keys",
+  "id": "did:web:provider.example.com#mls-keys",
   "type": "MLSKeyPackages",
-  "serviceEndpoint": "https://alice.example.com/.well-known/mls-key-packages"
+  "serviceEndpoint": "https://provider.example.com/.well-known/mls-key-packages"
 }
 ```
 
-This is functionally equivalent to the `mls_key_packages` field in the well-known configuration and is provided for DID ecosystems where the DID Document is the canonical metadata publication point.
+This is functionally equivalent to the `mls_key_packages` field in the well-known configuration and is provided for DID ecosystems where the DID Document is the canonical metadata publication point. The well-known configuration is preferred when both are available.
 
 **Relay discovery via DID Document:**
 
 ```json
 {
-  "id": "did:web:alice.example.com#relay",
+  "id": "did:key:z6Mkf...#relay",
   "type": "WMPRelay",
   "serviceEndpoint": "wss://relay.example.com/wmp"
 }
 ```
 
-This is functionally equivalent to the `relay` field in the well-known configuration.
+This is functionally equivalent to the `relay` field in the well-known configuration. This mechanism is primarily useful for `did:key` and `did:jwk` identifiers where no domain is available for well-known configuration.
 
 #### 7.5.5 Deployment Models
 
 Different WMP participants have different infrastructure capabilities. This section describes common deployment models and their recommended discovery approach.
 
+> **Terminology:** A *wallet provider* is the organization that operates the wallet backend infrastructure. A *wallet unit* is a specific wallet instance belonging to a specific user. In multi-tenant deployments, the wallet provider operates the WMP endpoint; individual wallet units are reached via relaying through the provider's endpoint.
+
 **1. Self-hosted server (issuer, verifier, enterprise)**
 
 The participant controls a domain and runs a web server.
 
-- **Identifier:** `x509:san:dns:example.com`, `https://example.com`, or `did:web:example.com`
+- **Identifier:** `x509:san:dns:example.com` (RECOMMENDED), `https://example.com`, or `did:web:example.com`
 - **Discovery:** Well-known configuration at `/.well-known/wmp-configuration` (§7.5.1)
-- **Example:** A government credential issuer at `gov-issuer.example.eu`
+- **Authentication:** `mtls` or `x5c` with certificate containing the SAN (RECOMMENDED for server-side entities)
+- **Example:** A government credential issuer at `x509:san:dns:gov-issuer.example.eu`
 
-**2. Hosted/cloud wallet (multi-tenant provider)**
+**2. Cloud/hybrid wallet (multi-tenant wallet provider)**
 
-Multiple users share a single wallet backend. Each user has a distinct identifier but the provider operates the WMP endpoint.
+A wallet provider operates a cloud backend serving multiple users. The provider is the tenant, not the user. The binding between a user and their wallet provider is private.
 
-- **Identifier:** `did:web:wallet.example.com:users:alice` or similar path-based DID
-- **Discovery — DID Document (RECOMMENDED):** The provider publishes a DID Document for each user with a `WMPMessaging` service entry pointing to the provider's WMP endpoint. The `serviceEndpoint` MAY include a user-specific path (e.g., `wss://wallet.example.com/wmp/users/alice`) or the provider may route based on the `sender`/`participants` fields in the session create request.
-- **Discovery — sub-path well-known:** For `did:web` with path components, the well-known configuration MAY be served at the sub-path: `did:web:wallet.example.com:users:alice` → `https://wallet.example.com/users/alice/.well-known/wmp-configuration`. This follows `did:web` path-to-URL mapping semantics.
-- **Routing:** The provider's WMP endpoint receives the session create with the full user identifier in the `participants` field and routes internally to the correct user context.
+- **Provider identifier:** `x509:san:dns:wallet.example.com` (RECOMMENDED) or `did:web:wallet.example.com`
+- **Discovery:** Well-known configuration at `https://wallet.example.com/.well-known/wmp-configuration` — a single configuration for the entire provider, not per-user configurations
+- **User routing:** The provider's relay receives incoming sessions addressed to user identifiers and routes internally to the correct wallet unit. The user's identifier appears in the `participants` field of `wmp.session.create`, but the endpoint discovered is always the provider's.
+- **User identifiers:** Users MAY use `did:key` or other non-domain identifiers. Their identifier does not need to be publicly resolvable — the wallet provider knows which user identifiers it serves and routes accordingly.
+- **Privacy guarantee:** No per-user DID Documents, no per-user well-known configurations, no per-user sub-path resolution. The only publicly discoverable information is the wallet provider's endpoint.
+
+```
+Sender → discovers wallet.example.com via x509:san:dns (well-known config)
+       → connects to wss://wallet.example.com/wmp (provider's relay endpoint)
+       → sends wmp.session.create with target user identifier in participants
+       → provider's relay routes internally to the correct wallet unit
+       → user↔provider binding is never exposed publicly
+```
+
+Well-known configuration for a wallet provider:
 
 ```json
 {
-  "id": "did:web:wallet.example.com:users:alice#wmp",
-  "type": "WMPMessaging",
-  "serviceEndpoint": "wss://wallet.example.com/wmp"
+  "supported_versions": ["0.1"],
+  "endpoints": {
+    "websocket": "wss://wallet.example.com/wmp"
+  },
+  "relay": "wss://wallet.example.com/wmp",
+  "accepted_schemes": ["did", "x509", "uri"],
+  "security_modes": ["mls", "tls"],
+  "mls_key_packages": "https://wallet.example.com/.well-known/mls-key-packages"
 }
 ```
 
+> **Anti-pattern:** Publishing per-user DID Documents (e.g., `did:web:wallet.example.com:users:alice`) with `WMPMessaging` service entries publicly exposes which users are served by which wallet provider. This leaks private information and SHOULD NOT be used in production deployments. Similarly, per-user sub-path well-known configurations (`https://wallet.example.com/users/alice/.well-known/wmp-configuration`) have the same privacy problem.
+
 **3. Mobile/native wallet (no web server)**
 
-The wallet runs on a mobile device or desktop app with no publicly reachable HTTP server.
+The wallet runs on a mobile device or desktop app with no publicly reachable HTTP server. The wallet is operated by a wallet provider that runs relay infrastructure.
 
-- **Identifier:** `did:key:z6Mkf...`, `did:jwk:...`, or provider-assigned `did:web`
-- **Discovery — DID Document:** The DID Document's `WMPMessaging` service entry points to a relay endpoint where the wallet has registered (see topology §6 in [wmp-transport.md](wmp-transport.md)).
-- **Discovery — session parameters:** The wallet's endpoint is provided out-of-band (e.g., in an OID4VCI credential offer URL or a QR code).
-- **Relay registration:** The wallet registers with a relay using `wmp.relay.register`. The relay acts as a rendezvous point — incoming sessions are forwarded to the wallet over the wallet's persistent connection to the relay.
+- **Wallet unit identifier:** `did:key:z6Mkf...` or `did:jwk:...` (non-public, not independently discoverable)
+- **Provider identifier:** `x509:san:dns:provider.example.com` (discoverable via well-known configuration)
+- **Discovery:** The wallet provider's well-known configuration advertises the relay endpoint. The wallet unit registers with the provider's relay using `wmp.relay.register`. Incoming sessions addressed to the wallet unit's `did:key` identifier are routed by the relay to the wallet's persistent connection.
+- **Discovery — session parameters:** Alternatively, the wallet's endpoint MAY be provided out-of-band (e.g., in an OID4VCI credential offer URL or a QR code).
 
 ```json
 {
   "id": "did:key:z6Mkf...#wmp",
   "type": "WMPMessaging",
-  "serviceEndpoint": "wss://relay.example.com/wmp"
+  "serviceEndpoint": "wss://provider.example.com/wmp"
 }
 ```
 
+> **Note:** The `did:key` identifier is appropriate here because the wallet unit has no public domain. The DID Document service entry (above) is only needed when the DID profile resolver is used for discovery. In the common case, the sender already knows the wallet provider's endpoint (via well-known configuration on the provider's domain) and the wallet unit's `did:key` is provided via session parameters or out-of-band exchange.
+
 **4. IoT/embedded device**
 
-- **Identifier:** Device-specific DID or X.509 device certificate
+- **Identifier:** X.509 device certificate (`x509:sha256:...`) or device-specific `did:key`
 - **Discovery:** Relay-mediated (same as mobile wallet) or session parameters from a device management system
 
 **5. Privacy-preserving (no public endpoint)**
 
 Participants who do not want a discoverable WMP endpoint.
 
-- **Identifier:** `did:key`, session-scoped `opaque`, or any identifier without a published DID Document
+- **Identifier:** `did:key`, session-scoped `opaque`, or any identifier without a published discovery document
 - **Discovery:** Endpoint is provided exclusively via session parameters during session creation. No publicly resolvable discovery metadata is published.
 - **Trade-off:** Only works when the initiator already knows the participant's endpoint (e.g., from a prior interaction, invitation link, or out-of-band exchange).
 
@@ -1890,11 +1918,11 @@ Participants who do not want a discoverable WMP endpoint.
 
 A WMP session MAY include participants using different identifier schemes. The protocol makes no assumption that both sides use the same identifier type — each participant is discovered and authenticated independently using its own scheme.
 
-**Example:** A wallet identified by `did:web` communicating with an issuer identified by an X.509 SAN:
+**Example:** A wallet provider identified by `x509:san:dns` communicating with an issuer also identified by `x509:san:dns`:
 
 ```json
 {
-  "wmp": {"version": "0.1", "sender": "did:web:citizen.example.com"},
+  "wmp": {"version": "0.1", "sender": "x509:san:dns:wallet.example.com"},
   "participants": ["x509:san:dns:gov-issuer.example.eu"],
   "capabilities_offered": {
     "flows": {"max_concurrent": 5}
@@ -1903,20 +1931,35 @@ A WMP session MAY include participants using different identifier schemes. The p
 }
 ```
 
-**Pre-connect compatibility check:** Before connecting, the wallet MAY fetch the issuer's well-known configuration and verify that `accepted_schemes` includes `"did"`. If not, the wallet knows the issuer cannot authenticate DID-based identifiers and can avoid the connection attempt.
+**Cross-scheme example:** A wallet unit identified by `did:key` (routed via its provider's relay) communicating with an issuer identified by `x509:san:dns`:
 
-**How discovery works in this scenario:**
+```json
+{
+  "wmp": {"version": "0.1", "sender": "did:key:z6Mkf..."},
+  "participants": ["x509:san:dns:gov-issuer.example.eu"],
+  "capabilities_offered": {
+    "flows": {"max_concurrent": 5}
+  },
+  "security": {"mode": "tls"}
+}
+```
 
-1. **Wallet** (`did:web:citizen.example.com`): Extract domain `citizen.example.com` → fetch `https://citizen.example.com/.well-known/wmp-configuration`
+**Pre-connect compatibility check:** Before connecting, the initiator MAY fetch the responder's well-known configuration and verify that `accepted_schemes` includes the initiator's scheme. If not, the initiator knows the responder cannot authenticate its identifier scheme and can avoid the connection attempt.
+
+**How discovery works in cross-scheme scenarios:**
+
+1. **Wallet provider** (`x509:san:dns:wallet.example.com`): Extract domain `wallet.example.com` → fetch `https://wallet.example.com/.well-known/wmp-configuration`
 2. **Issuer** (`x509:san:dns:gov-issuer.example.eu`): Extract domain `gov-issuer.example.eu` → fetch `https://gov-issuer.example.eu/.well-known/wmp-configuration`
+3. **Wallet unit** (`did:key:z6Mkf...`): No domain extractable — endpoint is provided via session parameters or the sender knows the provider's relay endpoint from a prior exchange
 
-Both participants use the same primary discovery mechanism (Section 7.5.1). The identifier scheme determines *authentication* — not discovery.
+Both domain-based participants use the same primary discovery mechanism (Section 7.5.1). The identifier scheme determines *authentication* — not discovery.
 
 **How authentication works in this scenario:**
 
 | Participant | Scheme | Authentication method |
 |-------------|--------|----------------------|
-| Wallet | `did:web` | Detached JWS signed with key from DID Document (via DID discovery profile) |
+| Wallet provider | `x509:san:dns` | mTLS with certificate containing the SAN, or `x5c` signed challenge |
+| Wallet unit | `did:key` | Detached JWS signed with key inline in the DID |
 | Issuer | `x509:san:dns` | mTLS with certificate containing the SAN, or bearer token |
 
 Each participant authenticates using the mechanism appropriate to its own identifier scheme (Section 7.4). The responder validates the initiator's scheme during authentication (§4.4) — if the responder cannot handle the initiator's scheme, it rejects the session with error `-31002`.
@@ -2193,13 +2236,13 @@ The well-known configuration document (§7.5.1) is served as plain JSON over HTT
 | DNSSEC | Prevents DNS spoofing (when deployed) |
 | CAA records | Constrains certificate issuance to authorized CAs |
 | Certificate Transparency | Detects unauthorized certificate issuance |
-| DID Document discovery (§7.5.4) | Cryptographically bound metadata — the DID method's verification mechanism authenticates the document. Authoritative when both mechanisms are available (§7.5.4). |
 
 **Recommendations:**
 
-- Deployments requiring cryptographically verifiable metadata SHOULD use DID Document discovery (§7.5.4), where the DID method's native verification mechanism provides integrity guarantees independent of TLS.
+- Deployments SHOULD use DNSSEC and CAA records to strengthen domain-based discovery. Combined with Certificate Transparency monitoring, this provides strong integrity guarantees for well-known configuration documents without requiring additional metadata infrastructure.
 - Trust frameworks such as OpenID Federation define signed entity statements that can carry WMP endpoint metadata with hierarchical trust chains. Profiles MAY specify OpenID Federation as a metadata integrity mechanism.
 - Implementations SHOULD apply standard HTTP cache validation (ETags, `Cache-Control`) and SHOULD NOT cache well-known configurations beyond their declared freshness lifetime.
+- The DID profile resolver (§7.5.4) provides an alternative discovery path for DID identifiers. However, the integrity guarantees of DID Documents depend on the specific DID method — `did:web` has the same HTTPS/DNS trust model as well-known configuration and does not provide additional integrity.
 
 ### 8.12 Participant Revocation Mid-Session
 

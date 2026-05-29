@@ -336,7 +336,7 @@ A participant registers with their relay by connecting and sending `wmp.relay.re
   "id": "reg-001",
   "method": "wmp.relay.register",
   "params": {
-    "wmp": {"version": "0.1", "sender": "did:web:alice.example.com"},
+    "wmp": {"version": "0.1", "sender": "did:key:z6MkfAlice..."},
     "auth": {
       "type": "signed_challenge",
       "challenge": "<relay-provided challenge>",
