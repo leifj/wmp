@@ -14,7 +14,7 @@
             "wmp": {
               "version": "0.1",
               "session_id": "ses-a1b2c3d4",
-              "sender": "did:web:alice.example.com"
+              "sender": "x509:san:dns:alice.example.com"
             },
             "flow_type": "approval",
             "flow_id": "flow-7890",
@@ -44,7 +44,7 @@
             "flow_id": "flow-7890",
             "step": "awaiting_review",
             "payload": {
-              "reviewer": "did:web:bob.example.com",
+              "reviewer": "x509:san:dns:bob.example.com",
               "deadline": "2026-05-01T00:00:00Z"
             }
           }
@@ -60,7 +60,7 @@
             "wmp": {
               "version": "0.1",
               "session_id": "ses-a1b2c3d4",
-              "sender": "did:web:bob.example.com"
+              "sender": "x509:san:dns:bob.example.com"
             },
             "flow_id": "flow-7890",
             "action": "approve",
@@ -83,7 +83,7 @@
             "flow_id": "flow-7890",
             "result": {
               "approved": true,
-              "approver": "did:web:bob.example.com",
+              "approver": "x509:san:dns:bob.example.com",
               "timestamp": "2026-04-29T14:30:00Z"
             }
           }

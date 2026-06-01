@@ -10,10 +10,10 @@
         "wmp": {
           "version": "0.1",
           "session_id": "ses-a1b2c3d4",
-          "sender": "did:web:alice.example.com",
+          "sender": "x509:san:dns:alice.example.com",
           "timestamp": "2026-04-29T10:15:30Z"
         },
-        "to": ["did:web:bob.example.com"],
+        "to": ["x509:san:dns:bob.example.com"],
         "content_type": "application/json",
         "body": {
           "text": "Hello, Bob!"
@@ -33,7 +33,7 @@
         "wmp": {
           "version": "0.1",
           "session_id": "ses-a1b2c3d4",
-          "sender": "did:web:alice.example.com",
+          "sender": "x509:san:dns:alice.example.com",
           "encrypted": true,
           "epoch": 3
         },
@@ -53,7 +53,7 @@
         "wmp": {
           "version": "0.1",
           "session_id": "ses-a1b2c3d4",
-          "sender": "did:web:bob.example.com"
+          "sender": "x509:san:dns:bob.example.com"
         },
         "message_ids": ["msg-001"],
         "status": "received"
@@ -72,15 +72,15 @@
         "wmp": {
           "version": "0.1",
           "session_id": "ses-a1b2c3d4",
-          "sender": "did:web:alice.example.com",
+          "sender": "x509:san:dns:alice.example.com",
           "timestamp": "2026-04-29T10:15:30Z",
           "signature": {
             "alg": "ES256",
-            "kid": "did:web:alice.example.com#key-1",
+            "kid": "x509:san:dns:alice.example.com#key-1",
             "value": "MEUCIQC7k..."
           }
         },
-        "to": ["did:web:bob.example.com"],
+        "to": ["x509:san:dns:bob.example.com"],
         "content_type": "application/json",
         "body": { "text": "Signed message" }
       }

@@ -10,9 +10,9 @@
       "params": {
         "wmp": {
           "version": "0.1",
-          "sender": "did:web:alice.example.com"
+          "sender": "x509:san:dns:alice.example.com"
         },
-        "participants": ["did:web:bob.example.com"],
+        "participants": ["x509:san:dns:bob.example.com"],
         "capabilities_offered": {
           "messaging": { "max_size": 65536 }
         },
@@ -48,9 +48,9 @@
       "params": {
         "wmp": {
           "version": "0.1",
-          "sender": "did:web:alice.example.com"
+          "sender": "x509:san:dns:alice.example.com"
         },
-        "participants": ["did:web:bob.example.com"],
+        "participants": ["x509:san:dns:bob.example.com"],
         "capabilities_offered": {
           "messaging": { "max_size": 65536 },
           "flows": { "max_concurrent": 5 }
@@ -95,12 +95,12 @@
       "params": {
         "wmp": {
           "version": "0.1",
-          "sender": "did:web:alice.example.com"
+          "sender": "x509:san:dns:alice.example.com"
         },
-        "participants": ["did:web:bob.example.com"],
+        "participants": ["x509:san:dns:bob.example.com"],
         "capabilities_offered": {
           "messaging": { "max_size": 65536 },
-          "relay": { "destinations": ["did:web:carol.example.com"] }
+          "relay": { "destinations": ["x509:san:dns:carol.example.com"] }
         },
         "security": {
           "mode": "mls-optional",
@@ -120,7 +120,7 @@
         },
         "capabilities": {
           "messaging": { "max_size": 65536 },
-          "relay": { "destinations": ["did:web:carol.example.com"] }
+          "relay": { "destinations": ["x509:san:dns:carol.example.com"] }
         },
         "security": {
           "mode": "mls-optional",

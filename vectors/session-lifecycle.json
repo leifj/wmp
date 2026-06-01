@@ -11,10 +11,10 @@
         "wmp": {
           "version": "0.1",
           "session_id": "ses-a1b2c3d4",
-          "sender": "did:web:alice.example.com"
+          "sender": "x509:san:dns:alice.example.com"
         },
         "add": {
-          "relay": { "destinations": ["did:web:carol.example.com"] }
+          "relay": { "destinations": ["x509:san:dns:carol.example.com"] }
         },
         "remove": ["oid4vp"],
         "security": {
@@ -35,7 +35,7 @@
         "capabilities": {
           "messaging": { "max_size": 65536 },
           "flows": { "max_concurrent": 5 },
-          "relay": { "destinations": ["did:web:carol.example.com"] }
+          "relay": { "destinations": ["x509:san:dns:carol.example.com"] }
         },
         "security": {
           "mode": "mls-optional",
@@ -59,7 +59,7 @@
         "wmp": {
           "version": "0.1",
           "session_id": "ses-a1b2c3d4",
-          "sender": "did:web:alice.example.com"
+          "sender": "x509:san:dns:alice.example.com"
         },
         "reason": "complete"
       }
