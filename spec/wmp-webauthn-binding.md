@@ -3,8 +3,8 @@
 ## Wallet Messaging Protocol — WebAuthn Authentication Binding for Verifiable Presentations
 
 **Status:** Draft  
-**Version:** 0.1.0  
-**Date:** 2026-06-02
+**Version:** 0.2.0  
+**Date:** 2026-06-03
 
 ## 1. Introduction
 
@@ -14,6 +14,7 @@ This specification builds on:
 - [WMP Core](wmp-core.md) §4.4 (Authentication)
 - [WMP OpenID4x Profile](wmp-openid4x.md) §3.2 (`oid4vp` flow)
 - [Web Authentication Level 2](https://www.w3.org/TR/webauthn-2/) (WebAuthn)
+- [CTAP 2.2](https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html) (Passkey Provider API)
 
 ### 1.1 Problem Statement
 
@@ -22,8 +23,9 @@ Standard OID4VP flows use a `nonce` in the authorization request to bind the VP 
 1. **Session splice** — Substitute a VP token from one session into another.
 2. **Consent bypass** — Obtain a VP token without the user's explicit approval gesture.
 3. **Replay** — Reuse a VP token obtained from a previous interaction.
+4. **Query tampering** — A relay intermediary could alter the DCQL query while forwarding a valid session.
 
-By deriving the VP nonce from the WebAuthn challenge (which itself is bound to the WMP session), all three attacks are prevented.
+By deriving the VP nonce from the WebAuthn challenge (which itself is bound to the WMP session), and by requiring E2E encryption when relay intermediaries are present, all four attacks are prevented.
 
 ### 1.2 Design Goals
 
@@ -31,6 +33,7 @@ By deriving the VP nonce from the WebAuthn challenge (which itself is bound to t
 2. **No new auth type** — Reuse the existing `signed_challenge` auth type (§4.4.2) by encoding the WebAuthn assertion as the signature payload.
 3. **Composable** — This binding constrains how the `oid4vp` profile is used; it does not replace it.
 4. **Phishing-resistant** — WebAuthn origin binding prevents the challenge from being used on a different origin.
+5. **Registration-free** — The RECOMMENDED credential model uses the wallet as a passkey provider, eliminating prior RP registration requirements.
 
 ## 2. Nonce Derivation
 
@@ -63,9 +66,75 @@ Where:
 | VP binding | Same nonce appears in the VP token, linking the presentation to the session and gesture |
 | Phishing resistance | WebAuthn `rpId` origin check ensures the challenge was consumed on the correct origin |
 
-## 3. Protocol Flow
+## 3. Credential Models
 
-### 3.1 Sequence
+This specification supports two credential models for the WebAuthn ceremony. Model B is RECOMMENDED.
+
+### 3.1 Model A: RP-Managed Credentials
+
+The user has a passkey previously registered with the verifier RP. The RP verifies the assertion locally; the wallet backend can only verify the challenge binding from `clientDataJSON` but cannot verify the assertion signature (it does not hold the user's public key).
+
+This model requires a prior relationship between the user and the RP, which limits applicability in first-contact presentation flows.
+
+### 3.2 Model B: Wallet-Managed Credentials (RECOMMENDED)
+
+The wallet acts as a **passkey provider** (FIDO2 credential manager). When the RP calls `navigator.credentials.get()`, the platform routes the WebAuthn request to the wallet, which generates or retrieves an RP-scoped credential on demand.
+
+```
+User/Browser                  OS/Platform              Wallet (Passkey Provider)
+     │                            │                           │
+     │── navigator.credentials    │                           │
+     │   .get({challenge})───────▶│                           │
+     │                            │── CTAP/platform ─────────▶│
+     │                            │   getAssertion            │
+     │                            │                           │
+     │                            │   Wallet derives key:     │
+     │                            │   key = KDF(master, rpId) │
+     │                            │   Signs assertion         │
+     │                            │                           │
+     │                            │◀── assertion ─────────────│
+     │◀── assertion ──────────────│                           │
+```
+
+**Key derivation:** The wallet derives per-RP credential keys deterministically:
+
+```
+credential_key = KDF(user_master_key, rpId)
+```
+
+Where `KDF` is a suitable key derivation function (e.g., HKDF-SHA-256 with `rpId` as the info parameter). This means:
+- No per-RP key storage is needed — the wallet backend can reconstruct the public key from `rpId` and the user's master key.
+- No prior registration with the RP is required.
+- Each RP gets a unique, unlinkable credential.
+
+**Advantages over Model A:**
+
+| Property | Model A (RP-managed) | Model B (Wallet-managed) |
+|----------|---------------------|-------------------------|
+| Prior registration | Required | Not required |
+| Assertion verifier | RP only | RP + wallet backend |
+| Key holder | RP's authenticator DB | Wallet/passkey provider |
+| Credential linkability | RP-controlled | Wallet-controlled, per-RP isolated |
+| First-contact support | No | Yes |
+
+When Model B is used:
+- The `webauthn_binding` field MUST be included in `wmp.session.authenticate`.
+- The wallet backend MUST verify the assertion signature (it holds the key).
+- The `credential_id` in the `webauthn_binding` identifies the wallet-managed credential.
+
+### 3.3 Credential ID in `webauthn_binding`
+
+When using Model B, the `webauthn_binding` object MUST include a `credential_id` field:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `credential_id` | string | REQUIRED (Model B) | Base64url-encoded credential ID from the assertion |
+
+The wallet backend uses the `credential_id` together with the `rpId` (from `clientDataJSON.origin`) to look up or derive the corresponding public key for signature verification.
+
+## 4. Protocol Flow
+
+### 4.1 Sequence
 
 ```
 User/Browser              RP                         Wallet Backend
@@ -93,10 +162,15 @@ User/Browser              RP                         Wallet Backend
      │    get(challenge =  │                               │
      │      binding_nonce) │                               │
      │                     │                               │
+     │    [Wallet passkey provider                          │
+     │     generates/retrieves                              │
+     │     RP-scoped credential]                            │
+     │                     │                               │
  5.  │── assertion ───────▶│                               │
      │   {authenticatorData│                               │
      │    clientDataJSON,  │                               │
-     │    signature}       │                               │
+     │    signature,       │                               │
+     │    credential_id}   │                               │
      │                     │                               │
      │                     │   RP verifies assertion       │
      │                     │   locally (user identity)     │
@@ -112,6 +186,8 @@ User/Browser              RP                         Wallet Backend
      │                     │       client_data_json:       │
      │                     │         "<base64url>",        │
      │                     │       signature:              │
+     │                     │         "<base64url>",        │
+     │                     │       credential_id:          │
      │                     │         "<base64url>",        │
      │                     │       user_handle:            │
      │                     │         "<base64url>"         │
@@ -141,13 +217,15 @@ User/Browser              RP                         Wallet Backend
      │    complete         │                               │
 ```
 
-### 3.2 Step Details
+### 4.2 Step Details
 
 #### Step 2: Session Creation
 
 The RP creates a WMP session to the user's wallet backend. The `user_hint` field (opaque to WMP) allows the wallet backend to route the session to the correct wallet unit without revealing user identity to intermediaries.
 
 The RP MUST authenticate itself using `mtls` or `x5c` (as an `x509:san:dns:` entity). The RP MUST negotiate the `oid4vp` capability.
+
+When the WMP session traverses relay intermediaries, the session MUST use `mls` or `mls-optional` security mode with `flows` in `encrypted_capabilities` (see §7.1). This prevents relay-level MITM attacks on the DCQL query and VP token.
 
 #### Step 3: Challenge Issuance
 
@@ -161,12 +239,17 @@ The RP issues a WebAuthn `navigator.credentials.get()` call with:
 const options = {
   challenge: base64urlDecode(bindingNonce),
   rpId: "rp.example.com",
-  allowCredentials: [...],  // user's registered credentials
+  // Model A: allowCredentials with registered credential IDs
+  // Model B: omit allowCredentials — wallet passkey provider responds
   userVerification: "required"
 };
 ```
 
-The user performs a gesture (biometric, PIN, etc.) and the browser returns an assertion. The RP verifies the assertion locally to establish user identity.
+The user performs a gesture (biometric, PIN, etc.) and the browser returns an assertion.
+
+**Model A:** The RP verifies the assertion signature against its registered credential public key.
+
+**Model B:** The RP receives a credential from the wallet passkey provider. The RP MAY verify the assertion signature if it has previously cached the public key, or MAY defer full verification to the wallet backend (which controls the key). The RP MUST still verify `clientDataJSON.origin` and `clientDataJSON.type`.
 
 #### Step 6: Session Authentication with WebAuthn Binding
 
@@ -181,6 +264,7 @@ The RP authenticates the WMP session using `signed_challenge`. The `auth` object
     "authenticator_data": "<base64url>",
     "client_data_json": "<base64url>",
     "signature": "<base64url>",
+    "credential_id": "<base64url>",
     "user_handle": "<base64url>"
   }
 }
@@ -192,7 +276,8 @@ The wallet backend MUST:
 1. Verify the RP's `signed_challenge` signature (standard §4.4.3 verification).
 2. Extract the `challenge` from `clientDataJSON` in the `webauthn_binding`.
 3. Verify that the extracted challenge equals `SHA-256(session_id || ":" || challenge)`.
-4. Optionally verify the WebAuthn assertion signature if it holds the user's public key.
+4. **Model B (REQUIRED):** Derive or look up the credential public key from `credential_id` and `rpId`, and verify the WebAuthn assertion signature. This provides end-to-end proof of user gesture.
+5. **Model A (OPTIONAL):** Verify the WebAuthn assertion signature if the user's public key is available.
 
 #### Steps 8–10: OID4VP Flow
 
@@ -204,20 +289,21 @@ The RP starts an `oid4vp` flow with the `nonce` set to the binding nonce. The wa
 
 The RP, upon receiving the VP token, verifies that the VP token's nonce matches the binding nonce, completing the cryptographic chain.
 
-## 4. The `webauthn_binding` Field
+## 5. The `webauthn_binding` Field
 
-### 4.1 Definition
+### 5.1 Definition
 
-The `webauthn_binding` field is an OPTIONAL extension to the `auth` object (§4.4.2) that carries WebAuthn assertion data alongside a standard `signed_challenge` or `x5c` authentication.
+The `webauthn_binding` field is an extension to the `auth` object (§4.4.2) that carries WebAuthn assertion data alongside a standard `signed_challenge` or `x5c` authentication.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `authenticator_data` | string | REQUIRED | Base64url-encoded authenticator data from the assertion |
 | `client_data_json` | string | REQUIRED | Base64url-encoded client data JSON |
 | `signature` | string | REQUIRED | Base64url-encoded assertion signature |
+| `credential_id` | string | REQUIRED (Model B) | Base64url-encoded credential ID |
 | `user_handle` | string | OPTIONAL | Base64url-encoded user handle |
 
-### 4.2 Verification
+### 5.2 Verification
 
 A recipient of a `webauthn_binding` MUST verify:
 
@@ -225,19 +311,29 @@ A recipient of a `webauthn_binding` MUST verify:
 2. The `challenge` field in `clientDataJSON`, when base64url-decoded, equals the expected binding nonce.
 3. The `origin` field in `clientDataJSON` matches the RP's expected origin.
 
-A recipient MAY additionally verify the WebAuthn assertion signature if it possesses the user's credential public key (e.g., from a prior registration). This provides end-to-end proof of user gesture.
+**Model B additional requirements:** When the wallet backend is the passkey provider (RECOMMENDED), it MUST additionally:
 
-### 4.3 When to Include
+4. Derive or retrieve the credential public key using `credential_id` and the `rpId` from the origin.
+5. Verify the WebAuthn assertion signature using the derived public key.
+6. Verify that `authenticatorData.rpIdHash` matches `SHA-256(rpId)`.
 
-The `webauthn_binding` MUST be included when the RP wants the wallet backend to verify user gesture binding. It is OPTIONAL when the RP considers its own verification of the WebAuthn assertion sufficient.
+This provides **end-to-end proof** that:
+- The user approved this specific binding nonce via a gesture on the correct origin.
+- The wallet (passkey provider) generated the assertion — not a rogue authenticator.
 
-Even when the wallet backend does not verify the assertion signature, the challenge extraction from `clientDataJSON` provides cryptographic evidence that:
+### 5.3 When to Include
+
+**Model B:** The `webauthn_binding` MUST be included. The wallet backend performs full assertion verification.
+
+**Model A:** The `webauthn_binding` MUST be included when the RP wants the wallet backend to verify the challenge binding. The wallet backend verifies `clientDataJSON` fields but cannot verify the assertion signature.
+
+Even under Model A, the challenge extraction from `clientDataJSON` provides cryptographic evidence that:
 - A WebAuthn ceremony was performed for this specific binding nonce.
 - The ceremony occurred on the correct origin.
 
-## 5. User Consent Model
+## 6. User Consent Model
 
-### 5.1 WebAuthn as Consent Signal
+### 6.1 WebAuthn as Consent Signal
 
 In this binding, the WebAuthn gesture serves dual purpose:
 
@@ -246,14 +342,14 @@ In this binding, the WebAuthn gesture serves dual purpose:
 
 Because the binding nonce is derived from the WMP session (which carries the DCQL query), the user's WebAuthn gesture implicitly approves the presentation. The wallet backend MAY therefore skip the `awaiting_consent` step in the `oid4vp` flow when a valid `webauthn_binding` is present.
 
-### 5.2 Consent Downgrade Prevention
+### 6.2 Consent Downgrade Prevention
 
 The wallet backend MUST NOT skip consent if:
 - The `webauthn_binding` is absent or fails verification.
 - The VP request's disclosed claims differ from what was shown to the user before the WebAuthn ceremony.
 - The wallet backend's policy requires explicit per-credential consent regardless of authentication binding.
 
-### 5.3 Pre-Consent Display
+### 6.3 Pre-Consent Display
 
 The RP SHOULD display to the user, before the WebAuthn ceremony, a summary of:
 - The verifier identity (from WMP session metadata).
@@ -261,13 +357,13 @@ The RP SHOULD display to the user, before the WebAuthn ceremony, a summary of:
 
 This ensures informed consent even though the technical consent is captured via the WebAuthn gesture.
 
-## 6. Security Considerations
+## 7. Security Considerations
 
-### 6.1 Nonce Entropy
+### 7.1 Nonce Entropy
 
 The binding nonce derives from a SHA-256 hash over material containing at least 128 bits of entropy (from the WMP challenge per §4.4.7). The resulting 256-bit nonce exceeds the entropy requirements of both WebAuthn and OID4VP.
 
-### 6.2 Replay Prevention
+### 7.2 Replay Prevention
 
 The binding nonce is single-use because:
 - The WMP challenge is single-use (§4.4.7).
@@ -276,46 +372,71 @@ The binding nonce is single-use because:
 
 An attacker cannot replay a VP token from one session in another because the nonce will not match.
 
-### 6.3 Session Splice Prevention
+### 7.3 Session Splice Prevention
 
 An attacker who controls the network between RP and wallet backend cannot substitute VP tokens between sessions because:
 - Each session has a unique `session_id` and `challenge`.
 - The VP token's `nonce` is bound to these values via the hash.
 - The WebAuthn assertion is also bound to the same nonce via `clientDataJSON.challenge`.
 
-Substituting the VP token requires forging a WebAuthn assertion for the new nonce, which requires the user's authenticator.
+Substituting the VP token requires forging a WebAuthn assertion for the new nonce, which requires the user's authenticator (or, under Model B, the wallet's master key).
 
-### 6.4 Channel Security
+### 7.4 Relay MITM Prevention
 
-The WMP session between RP and wallet backend MUST use at least TLS 1.3. For maximum security:
-- The RP authenticates via `x5c` or `mtls`.
-- The wallet backend authenticates via `x5c` or `mtls`.
-- Consider `mls` mode if relay intermediaries are present.
+When the WMP session between RP and wallet backend traverses relay intermediaries, an attacker controlling the relay could:
+- Modify the DCQL query in `wmp.flow.start` to request additional credentials/claims.
+- Alter the VP token in `wmp.flow.complete` before forwarding to the RP.
 
-### 6.5 Timing
+The binding nonce prevents *substitution* of the VP token (wrong nonce → rejected), but does not prevent *query tampering* — the relay could change the query while the nonce remains valid, causing the wallet to disclose more than the user intended.
+
+**Mitigation:** When relay intermediaries are present, the WMP session MUST use `mls` or `mls-optional` security mode (WMP Core §4.2.3) with `flows` included in `encrypted_capabilities`. This provides E2E encryption of the DCQL query and VP token, preventing the relay from reading or modifying flow content.
+
+For direct connections (RP → wallet backend with no relay), mutual TLS provides equivalent protection at the transport layer.
+
+### 7.5 Channel Security
+
+The WMP session between RP and wallet backend MUST use at least TLS 1.3:
+- The RP MUST authenticate via `x5c` or `mtls`.
+- The wallet backend MUST authenticate via `x5c` or `mtls`.
+- When relay intermediaries are present, the session MUST use `mls` or `mls-optional` security mode (see §7.4).
+
+### 7.6 Passkey Provider Security (Model B)
+
+When the wallet acts as a passkey provider:
+
+- The `user_master_key` used for per-RP key derivation MUST be stored in a secure enclave, HSM, or equivalent tamper-resistant hardware.
+- Key derivation MUST use a KDF with domain separation: `HKDF-SHA-256(ikm=user_master_key, salt=<empty>, info="wmp-webauthn:" || rpId)`.
+- The derived credential key pair MUST use an algorithm supported by WebAuthn (RECOMMENDED: ES256 / P-256).
+- The passkey provider MUST verify `rpId` against the calling origin before signing — this is enforced by the platform's WebAuthn API but implementations MUST NOT bypass it.
+- Credential IDs MUST be opaque and unlinkable across RPs. RECOMMENDED: `credential_id = HMAC-SHA-256(user_master_key, rpId)` (deterministic, no storage needed).
+
+### 7.7 Timing
 
 The RP SHOULD complete the full flow (session create → WebAuthn → authenticate → VP) within the WMP challenge validity window (RECOMMENDED: 60 seconds per §4.4.7). Implementations SHOULD set `userVerification: "required"` to ensure a fresh user gesture.
 
-### 6.6 User Handle Privacy
+### 7.8 User Handle Privacy
 
 The `user_handle` in `webauthn_binding` is OPTIONAL. RPs that want to minimize information shared with the wallet backend SHOULD omit it. The wallet backend can identify the user via the `user_hint` in session creation without needing the WebAuthn user handle.
 
-## 7. Implementation Guidance
+## 8. Implementation Guidance
 
-### 7.1 RP Implementation
+### 8.1 RP Implementation
 
 ```
-1. Discover wallet backend endpoint (§7.5)
+1. Discover wallet backend endpoint (WMP Core §7.5)
 2. wmp.session.create → receive session_id, challenge
 3. Compute binding_nonce = SHA-256(session_id + ":" + challenge)
-4. WebAuthn get(challenge = binding_nonce) → verify assertion
+4. WebAuthn get(challenge = binding_nonce) → receive assertion
+   Model A: verify assertion against registered public key
+   Model B: verify clientDataJSON.origin and type; defer
+            signature verification to wallet backend
 5. wmp.session.authenticate with signed_challenge + webauthn_binding
 6. wmp.flow.start(oid4vp, nonce = binding_nonce, dcql_query = ...)
 7. Receive VP token, verify nonce matches binding_nonce
 8. Complete user login/authorization
 ```
 
-### 7.2 Wallet Backend Implementation
+### 8.2 Wallet Backend Implementation
 
 ```
 1. Accept wmp.session.create, issue challenge, set auth_required
@@ -324,6 +445,9 @@ The `user_handle` in `webauthn_binding` is OPTIONAL. RPs that want to minimize i
    b. If webauthn_binding present:
       - Extract challenge from clientDataJSON
       - Verify it equals SHA-256(session_id + ":" + challenge)
+      - Verify clientDataJSON.origin and type
+      - Model B: derive public key from credential_id + rpId,
+                 verify assertion signature
       - Mark session as user-gesture-verified
 3. Receive wmp.flow.start(oid4vp):
    a. Verify nonce == SHA-256(session_id + ":" + challenge)
@@ -332,7 +456,25 @@ The `user_handle` in `webauthn_binding` is OPTIONAL. RPs that want to minimize i
    d. Generate and return VP token with nonce embedded
 ```
 
-### 7.3 Capability Advertisement
+### 8.3 Wallet Passkey Provider Implementation (Model B)
+
+```
+1. Register as platform passkey provider (OS-specific API)
+2. On getAssertion(rpId, challenge):
+   a. Derive credential key: key = KDF(user_master_key, rpId)
+   b. Derive credential ID: id = HMAC-SHA-256(user_master_key, rpId)
+   c. Prompt user for gesture (biometric/PIN)
+   d. Sign authenticatorData || SHA-256(clientDataJSON)
+      with the derived private key
+   e. Return assertion with credential_id, signature,
+      authenticatorData, clientDataJSON
+3. Public key export (for RP registration, if needed):
+   a. On create() for an rpId, derive the same key pair
+   b. Return public key in attestation response
+   c. No server-side storage needed — key is deterministic
+```
+
+### 8.4 Capability Advertisement
 
 Wallet backends that support this binding SHOULD advertise it in capability negotiation:
 
@@ -341,12 +483,16 @@ Wallet backends that support this binding SHOULD advertise it in capability nego
   "oid4vp": {
     "supported_response_modes": ["direct_post"],
     "supported_formats": ["vc+sd-jwt", "mso_mdoc"],
-    "webauthn_binding": true
+    "webauthn_binding": true,
+    "webauthn_binding_model": "wallet_managed"
   }
 }
 ```
 
-The `webauthn_binding: true` flag indicates the wallet backend supports receiving and verifying `webauthn_binding` in session authentication.
+| Field | Values | Description |
+|-------|--------|-------------|
+| `webauthn_binding` | `true`/`false` | Whether the wallet backend supports WebAuthn binding |
+| `webauthn_binding_model` | `"wallet_managed"`, `"rp_managed"`, `"both"` | Which credential model(s) are supported. Default: `"wallet_managed"` |
 
 ## References
 
@@ -355,4 +501,5 @@ The `webauthn_binding: true` flag indicates the wallet backend supports receivin
 - [Web Authentication: An API for accessing Public Key Credentials Level 2](https://www.w3.org/TR/webauthn-2/)
 - [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
 - [Digital Credentials Query Language](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-digital-credentials-query-l)
-- [FIDO2: Client to Authenticator Protocol](https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html)
+- [FIDO2: Client to Authenticator Protocol v2.2](https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html)
+- [HKDF (RFC 5869)](https://www.rfc-editor.org/rfc/rfc5869)
