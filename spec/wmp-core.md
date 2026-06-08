@@ -28,6 +28,7 @@ The Wallet Messaging Protocol (WMP) is a multi-party messaging protocol built on
 | DIDComm 2.1 | Similar goals; WMP uses JSON-RPC instead of DIDComm envelopes |
 | AS4 | Similar goals; WMP avoids SOAP/XML complexity |
 | OID4VCI/OID4VP | Supported via the OpenID4x profile ([wmp-openid4x.md](wmp-openid4x.md)) |
+| WebAuthn | Authentication binding for verifiable presentations ([wmp-webauthn-binding.md](wmp-webauthn-binding.md)) |
 
 ### 1.3 Terminology
 
