@@ -97,22 +97,28 @@ Evidence events are organized into six categories corresponding to the ERDS even
 | `delivery_attempted` | Message delivery to recipient was attempted | Recipient's relay |
 | `delivery_confirmed` | Message was delivered to the recipient's endpoint | Recipient's relay |
 | `delivery_failed` | Message delivery to recipient permanently failed | Recipient's relay |
-| `delivery_expired` | Message delivery attempt timed out | Sender's relay |
-
+| `delivery_expired` | Message delivery attempt timed out | Sender's relay || `content_handover` | Content was handed over to the recipient (alternative to consignment) | Recipient's relay |
+| `content_handover_failed` | Handover to the recipient failed | Recipient's relay |
 ### 3.4 Retrieval Events
 
 | Event Type | Description | Generator |
 |------------|-------------|-----------|
 | `retrieval_confirmed` | Recipient retrieved the message from the relay queue | Recipient's relay |
-| `retrieval_timeout` | Recipient did not retrieve the message within the retention period | Recipient's relay |
-
+| `retrieval_timeout` | Recipient did not retrieve the message within the retention period | Recipient's relay || `content_access_tracked` | Recipient accessed the message content (partial or full) | Recipient's relay |
 ### 3.5 Acceptance Events
 
 | Event Type | Description | Generator |
 |------------|-------------|-----------|
 | `acceptance_confirmed` | Recipient explicitly accepted/acknowledged the message content | Recipient |
-| `acceptance_rejected` | Recipient explicitly rejected the message content | Recipient |
+| `acceptance_rejected` | Recipient explicitly rejected the message content | Recipient || `acceptance_expired` | Recipient did not accept or reject within the policy-defined period | Recipient's relay |
 
+### 3.5a Notification Events
+
+| Event Type | Description | Generator |
+|------------|-------------|----------|
+| `notification_sent` | Notification of pending content was sent to the recipient | Recipient's relay |
+| `notification_failed` | Notification delivery to the recipient failed | Recipient's relay |
+| `notification_delivered` | Notification was confirmed delivered to the recipient | Recipient's relay |
 ### 3.6 Non-ERDS Events
 
 Additional events beyond the ETSI EN 319 522 model:
@@ -123,7 +129,15 @@ Additional events beyond the ETSI EN 319 522 model:
 | `processed_confirmed` | Recipient's system processed the message (automated) | Recipient |
 | `flow_completed` | A structured flow completed (references `flow_id`) | Flow initiator or responder |
 | `session_evidence` | Evidence for the entire session (covers all events) | Any party |
+### 3.7 Gateway Events
 
+Events for interoperability with non-WMP delivery systems (AS4, SMTP, etc.):
+
+| Event Type | Description | Generator |
+|------------|-------------|----------|
+| `relay_to_external` | Message was forwarded to a non-WMP delivery system | Gateway relay |
+| `relay_to_external_failed` | Forwarding to a non-WMP system failed | Gateway relay |
+| `received_from_external` | Message was received from a non-WMP delivery system | Gateway relay |
 ## 4. Evidence Message Format
 
 ### 4.1 Evidence Notification
@@ -173,16 +187,58 @@ Evidence is delivered as a WMP notification:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `evidence_id` | string | REQUIRED | Unique identifier for this evidence record |
+| `evidence_version` | string | REQUIRED | Evidence format version (e.g., `"1.0"`) |
 | `event_type` | string | REQUIRED | One of the event types from Section 3 |
+| `event_reason` | object | OPTIONAL | Reason for the event, especially for rejections and failures. See Section 4.2.1. |
 | `original_message_id` | string | REQUIRED | The `id` of the original JSON-RPC message |
 | `original_sender` | string | REQUIRED | Sender identifier from the original message |
+| `original_sender_delegate` | object | OPTIONAL | Delegate who acted on behalf of the sender (see §3.3 of [wmp-core.md](wmp-core.md)). Fields: `id` (identifier), `identity_attributes` (object with structured claims). |
 | `original_recipient` | string | OPTIONAL | Intended recipient (for point-to-point messages) |
+| `original_recipient_delegate` | object | OPTIONAL | Delegate who received on behalf of the recipient. Fields: `id` (identifier), `identity_attributes` (object with structured claims). |
 | `original_content_hash` | object | REQUIRED | Hash of the original message content |
 | `event_time` | string | REQUIRED | ISO 8601 timestamp of the event |
+| `submission_time` | string | OPTIONAL | ISO 8601 timestamp of the original submission (distinct from event time for relay/delivery events) |
+| `evidence_issuer_policy` | string[] | OPTIONAL | Policy URIs or OIDs under which this evidence was produced (corresponding to R01 in EN 319 522-2) |
+| `evidence_issuer` | object | OPTIONAL | Structured details of the ERDS that produced this evidence. Fields: `id` (identifier), `name` (display name), `country` (ISO 3166-1 alpha-2). |
+| `sender_assurance_level` | string | OPTIONAL | Assurance level at which the sender was authenticated: `low`, `substantial`, `high` |
+| `recipient_assurance_level` | string | OPTIONAL | Assurance level at which the recipient was authenticated |
+| `sender_identity_attributes` | object | OPTIONAL | Structured identity attributes of the sender (name, org, country, etc.) as verified by the ERDS |
+| `recipient_identity_attributes` | object | OPTIONAL | Structured identity attributes of the recipient as verified by the ERDS |
+| `evidence_refers_to_recipient` | string | OPTIONAL | Identifier of the specific recipient this evidence pertains to (for multi-recipient messages) |
 | `flow_id` | string | OPTIONAL | Associated flow ID (for `flow_completed` events) |
 | `session_id` | string | OPTIONAL | Session ID (if different from the evidence delivery session) |
 | `previous_evidence_id` | string | OPTIONAL | Links to a preceding evidence record in the chain |
+| `external_system` | object | OPTIONAL | Details of a non-WMP system involved (for gateway events). Fields: `type` (e.g., `"AS4"`, `"SMTP"`), `id` (system identifier). |
+| `external_erds` | object | OPTIONAL | Details of an external ERDS involved (for relay events crossing system boundaries). Fields: `id`, `name`, `policy`. |
+| `transaction_log` | string | OPTIONAL | Reference to an external transaction log entry (URI or opaque identifier) |
+| `extensions` | object | OPTIONAL | Extension point for binding-specific or domain-specific additional evidence data |
 | `details` | object | OPTIONAL | Event-type-specific additional information |
+
+### 4.2.1 Event Reasons
+
+The `event_reason` object records why an event occurred, particularly for rejections, failures, and expiry events. This corresponds to ETSI EN 319 522-2 §8.2.4 (G04 Reason identifier).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | REQUIRED | Machine-readable reason code (see table below) |
+| `text` | string | OPTIONAL | Human-readable description |
+| `details` | object | OPTIONAL | Additional structured reason data |
+
+**Standard reason codes:**
+
+| Code | Applicable events | Description |
+|------|-------------------|-------------|
+| `policy_violation` | `submission_rejected`, `relay_rejected` | Message violates the ERDS policy |
+| `quota_exceeded` | `submission_rejected`, `relay_rejected` | Sender/recipient quota exceeded |
+| `invalid_format` | `submission_rejected` | Message format or content type not accepted |
+| `invalid_recipient` | `submission_rejected`, `delivery_failed` | Recipient identifier cannot be resolved |
+| `insufficient_assurance` | `delivery_failed`, `relay_rejected` | Recipient identity assurance level below the sender's requirement |
+| `consignment_mode_unsupported` | `relay_rejected`, `delivery_failed` | Requested consignment mode not supported |
+| `policy_unsupported` | `relay_rejected` | Requested applicable policy not supported |
+| `recipient_rejected` | `acceptance_rejected` | Recipient explicitly refused the content |
+| `timeout` | `delivery_expired`, `retrieval_timeout`, `acceptance_expired` | Operation timed out |
+| `system_error` | Any failure event | Internal system error |
+| `delegation_invalid` | `submission_rejected`, `delivery_failed` | Delegate authorization invalid or expired |
 
 ### 4.3 Content Hash
 
@@ -217,8 +273,10 @@ Evidence is delivered as follows:
 | Submission events | Original sender |
 | Relay events | Original sender + previous relay |
 | Consignment/delivery events | Original sender |
+| Notification events | Original sender |
 | Retrieval events | Original sender |
 | Acceptance events | Original sender |
+| Gateway events | Original sender + external system (where reachable) |
 
 Evidence MAY also be delivered to additional parties specified in the session's `evidence` capability parameters.
 
@@ -415,13 +473,21 @@ An implementation conforms to the WMP Evidence profile if it:
 
 For eIDAS ERDS compliance, an implementation MUST additionally:
 
-1. Support ALL event types in Sections 3.1–3.5
-2. Use eIDAS-qualified electronic signatures for evidence
-3. Use eIDAS-qualified timestamps from a qualified TSP
-4. Carry `identity_assertions` (Section 5.6 of [wmp-core.md](wmp-core.md)) with eIDAS-qualified certificates or attestations
-5. Retain evidence for at least 10 years
-6. Provide an evidence repository API (Section 6)
-7. Support the relay provenance chain (`relay_chain` in [wmp-core.md](wmp-core.md))
+1. Support ALL event types in Sections 3.1–3.5a (including notification, acceptance expiry, and handover events)
+2. Include `evidence_version`, `evidence_issuer_policy`, and `evidence_issuer` in all evidence objects
+3. Include `event_reason` with a standard reason code for all rejection and failure events
+4. Support delegation: record `original_sender_delegate` and `original_recipient_delegate` when delegation occurs
+5. Include `sender_assurance_level` and `recipient_assurance_level` in evidence when identity proofing was performed
+6. Include `sender_identity_attributes` and `recipient_identity_attributes` in evidence (structured legal identity)
+7. Support `consignment_mode` metadata and generate the corresponding evidence event sequences (§3.5 of [wmp-core.md](wmp-core.md))
+8. Publish `erds` and `recipient_metadata` in the well-known configuration (§7.5.1.1, §7.5.1.2 of [wmp-core.md](wmp-core.md))
+9. Use eIDAS-qualified electronic signatures for evidence
+10. Use eIDAS-qualified timestamps from a qualified TSP
+11. Carry `identity_assertions` (Section 5.6 of [wmp-core.md](wmp-core.md)) with eIDAS-qualified certificates or attestations
+12. Retain evidence for at least 10 years
+13. Provide an evidence repository API (Section 6)
+14. Support the relay provenance chain (`relay_chain` in [wmp-core.md](wmp-core.md))
+15. Support gateway events (Section 3.7) when interoperating with non-WMP ERDS systems
 
 ## References
 

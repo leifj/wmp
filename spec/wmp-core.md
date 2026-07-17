@@ -197,17 +197,105 @@ The `wmp` object within `params` or `result` carries protocol metadata:
 | `version` | string | REQUIRED | Protocol version (e.g., `"0.1"`) |
 | `session_id` | string | OPTIONAL | Session identifier. Omitted for session creation requests. |
 | `sender` | string | OPTIONAL | Sender identifier (DID, URI, or opaque ID). |
+| `sender_delegate` | object | OPTIONAL | Delegate acting on behalf of the sender (see Section 3.3). |
 | `timestamp` | string | OPTIONAL | ISO 8601 timestamp. |
 | `timestamp_token` | string | OPTIONAL | Base64url-encoded RFC 3161 timestamp token from a trusted TSA. |
 | `encrypted` | boolean | OPTIONAL | `true` if the payload is MLS-encrypted. Default: `false`. |
 | `epoch` | integer | OPTIONAL | MLS epoch number when `encrypted` is `true`. |
 | `signature` | string | OPTIONAL | Detached JWS for non-repudiation (see Section 5.4). |
 | `expires_at` | string | OPTIONAL | ISO 8601 timestamp. If set, the message MUST NOT be delivered after this time. Servers MUST discard queued messages past this time (see §5.3.1). |
-| `identity_assertions` | array | OPTIONAL | Legal identity bindings (see Section 3.7). |
-| `relay_chain` | array | OPTIONAL | Relay provenance chain (see Section 3.8). |
+| `deliver_after` | string | OPTIONAL | ISO 8601 timestamp. The message MUST NOT be delivered before this time (scheduled delivery). |
+| `identity_assertions` | array | OPTIONAL | Legal identity bindings (see Section 5.6). |
+| `relay_chain` | array | OPTIONAL | Relay provenance chain (see Section 5.7). |
 | `trace_id` | string | OPTIONAL | Distributed tracing identifier. |
 
-### 3.3 Method Naming Convention
+### 3.3 Delegation
+
+WMP supports delegation — the ability for one entity to act on behalf of another. When a message is sent by a delegate, the `sender_delegate` field in the `wmp` metadata identifies the delegate while `sender` identifies the principal on whose behalf the delegate acts.
+
+**`sender_delegate` object fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | REQUIRED | Delegate identifier (WMP identifier scheme) |
+| `identity_assertions` | array | OPTIONAL | Verifiable assertions proving the delegate's legal identity (same format as §5.6) |
+| `authorization` | object | OPTIONAL | Proof of authorization to act on behalf of the principal |
+
+**`authorization` object fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | REQUIRED | Authorization type: `verifiable_presentation`, `mandate`, `power_of_attorney` |
+| `credential` | string | OPTIONAL | Authorization credential (VP token or reference) |
+| `scope` | string[] | OPTIONAL | Authorized actions (e.g., `["submit", "retrieve"]`) |
+| `valid_until` | string | OPTIONAL | ISO 8601 expiry of the delegation |
+
+**Example — delegate sending on behalf of an organization:**
+
+```json
+{
+  "wmp": {
+    "version": "0.1",
+    "session_id": "ses-a1b2c3d4",
+    "sender": "ebcore:iso6523:0007:5567164818",
+    "sender_delegate": {
+      "id": "x509:san:dns:agent.example.com",
+      "authorization": {
+        "type": "verifiable_presentation",
+        "credential": "eyJ...",
+        "scope": ["submit", "retrieve"]
+      }
+    }
+  }
+}
+```
+
+When evidence is generated for a message sent by a delegate, the evidence MUST include both the principal's identity (`original_sender`) and the delegate's identity (`original_sender_delegate`) as defined in [wmp-evidence.md](wmp-evidence.md) Section 4.2.
+
+> **Note on recipient delegation:** A recipient's delegate is tracked by the relay at delivery time. When the R-ERDS delivers to a delegate, the evidence MUST record the delegate's identity in `original_recipient_delegate`. The relay determines recipient delegation from the recipient's session authentication and any registered delegate authorizations.
+
+### 3.4 Message-Level Delivery Metadata
+
+The following fields MAY be included in `params` alongside `wmp`, `to`, `content_type`, and `body` for `wmp.message.deliver` calls. These carry per-message delivery metadata corresponding to ERDS relay metadata (ETSI EN 319 522-2 §6).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reply_to` | string | OPTIONAL | Identifier to which replies should be directed (overrides `sender`). |
+| `in_reply_to` | string | OPTIONAL | JSON-RPC `id` of a previous message this message replies to (threading). |
+| `message_type` | string | OPTIONAL | Semantic message type URI or short code (e.g., `"invoice"`, `"order"`, `"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"`). |
+| `consignment_mode` | string | OPTIONAL | Requested mode of consignment for the recipient. See Section 3.5. |
+| `recipient_assurance_level` | string | OPTIONAL | Minimum identity assurance level required for the recipient before delivery. See Section 3.5.1. |
+| `applicable_policies` | string[] | OPTIONAL | Policy URIs or OIDs that subsequent relays and the R-ERDS MUST support. A relay that cannot enforce a listed policy MUST reject the message with `-31005`. |
+
+### 3.5 Consignment Modes
+
+The `consignment_mode` field specifies how the recipient's relay (R-ERDS) should deliver the user content to the recipient. This governs which evidence events are produced.
+
+| Mode | Description | Evidence flow |
+|------|-------------|---------------|
+| `basic` | Content is delivered directly without prior acceptance. | `delivery_confirmed` or `delivery_failed` |
+| `consented` | Recipient is notified and must explicitly accept or reject before content is accessible. | `notification_sent` → `acceptance_confirmed` / `acceptance_rejected` / `acceptance_expired` |
+| `consented_signed` | As `consented`, but the recipient must additionally produce a signed acknowledgment. | `notification_sent` → `acceptance_confirmed` (with signed receipt) / `acceptance_rejected` / `acceptance_expired` |
+
+When `consignment_mode` is absent, the R-ERDS applies its default policy (typically `basic`).
+
+A relay MUST NOT forward a message to an R-ERDS whose capabilities (§7.5.1 CSI metadata) do not include support for the requested `consignment_mode`. In this case, the relay MUST reject the message with error `-31005` (Capability not supported) and `data` indicating `{"unsupported": "consignment_mode"}`.
+
+#### 3.5.1 Recipient Assurance Level
+
+The `recipient_assurance_level` field allows the sender to require that the recipient's identity be verified to a minimum level before delivery. Values are drawn from the eIDAS assurance level vocabulary or a binding-specific enumeration:
+
+| Value | Description |
+|-------|-------------|
+| `low` | Reduced degree of confidence in the claimed identity |
+| `substantial` | Substantial degree of confidence |
+| `high` | High degree of confidence (e.g., eIDAS high, in-person identity proofing) |
+
+The R-ERDS MUST NOT deliver the message if it cannot authenticate the recipient at or above the requested level. In this case, a `delivery_failed` evidence with reason `insufficient_assurance` is generated.
+
+Relays SHOULD check the next ERDS's capability metadata (via CSI, §7.5.1) for supported assurance levels before forwarding. If the downstream ERDS cannot support the requested level, the relay MUST reject with `-31005`.
+
+### 3.6 Method Naming Convention
 
 WMP methods use a dot-separated namespace:
 
@@ -226,7 +314,7 @@ Domains:
 
 Application-specific methods use their own namespace prefix (e.g., `wallet.*`, `oid4vci.*`).
 
-### 3.4 Batch Messages
+### 3.7 Batch Messages
 
 JSON-RPC 2.0 batch requests are supported. Multiple WMP method calls MAY be sent as a JSON array:
 
@@ -237,7 +325,7 @@ JSON-RPC 2.0 batch requests are supported. Multiple WMP method calls MAY be sent
 ]
 ```
 
-### 3.5 Error Codes
+### 3.8 Error Codes
 
 WMP extends the standard JSON-RPC 2.0 error code space:
 
@@ -263,6 +351,10 @@ WMP extends the standard JSON-RPC 2.0 error code space:
 | -31012 | Identity assertion invalid | Identity assertion verification failed (diagnostic `data` in response — see §5.6.2) |
 | -31013 | Version not supported | No compatible protocol version (§2.2) |
 | -31014 | Queue full | Offline message queue for recipient is full; sender SHOULD retry later |
+| -31015 | Delegation invalid | Delegate authorization invalid, expired, or not permitted by ERDS policy |
+| -31016 | Consignment mode unsupported | Requested consignment mode not supported by the recipient's ERDS |
+| -31017 | Assurance level unsupported | Requested recipient assurance level cannot be met |
+| -31018 | Policy unsupported | One or more applicable policies cannot be enforced |
 
 ## 4. Session Lifecycle
 
@@ -1714,11 +1806,31 @@ GET https://<domain>/.well-known/wmp-configuration
   },
   "capabilities": {
     "messaging": {},
-    "flows": {"max_concurrent": 10}
+    "flows": {"max_concurrent": 10},
+    "evidence": {
+      "event_types": ["submission_accepted", "delivery_confirmed", "retrieval_confirmed"]
+    }
   },
   "accepted_schemes": ["did", "x509", "uri"],
   "security_modes": ["tls", "mls", "mls-optional"],
-  "mls_key_packages": "https://example.com/.well-known/mls-key-packages"
+  "mls_key_packages": "https://example.com/.well-known/mls-key-packages",
+  "erds": {
+    "consignment_modes": ["basic", "consented"],
+    "assurance_levels": ["low", "substantial", "high"],
+    "supported_policies": [
+      "urn:etsi:erds:policy:qualified",
+      "urn:example:erds:policy:corporate"
+    ],
+    "delegation": true,
+    "evidence_repository": "https://example.com/evidence",
+    "evidence_retention": "P10Y"
+  },
+  "recipient_metadata": {
+    "accepted_content_types": ["application/json", "application/pdf"],
+    "max_message_size": 10485760,
+    "consignment_preferences": "consented",
+    "encryption_required": false
+  }
 }
 ```
 
@@ -1731,6 +1843,43 @@ GET https://<domain>/.well-known/wmp-configuration
 | `security_modes` | string[] | OPTIONAL | Supported security modes |
 | `mls_key_packages` | string | OPTIONAL | URL to MLS KeyPackages endpoint |
 | `relay` | string | OPTIONAL | Default relay endpoint for this entity |
+| `erds` | object | OPTIONAL | ERDS capability metadata (Common Service Interface, see §7.5.1.1) |
+| `recipient_metadata` | object | OPTIONAL | Recipient capability preferences (Common Service Interface, see §7.5.1.2) |
+
+#### 7.5.1.1 ERDS Capability Metadata (`erds`)
+
+The `erds` object publishes the endpoint's ERDS service capabilities, corresponding to the Common Service Interface (CSI) defined in ETSI EN 319 522-2 §9 and EN 319 522-3 §6. This enables senders and relays to determine service compatibility *before* session establishment.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `consignment_modes` | string[] | OPTIONAL | Supported consignment modes: `basic`, `consented`, `consented_signed` |
+| `assurance_levels` | string[] | OPTIONAL | Identity assurance levels supported for recipient authentication: `low`, `substantial`, `high` |
+| `supported_policies` | string[] | OPTIONAL | Policy URIs or OIDs this ERDS enforces (corresponding to MD05) |
+| `delegation` | boolean | OPTIONAL | Whether sender/recipient delegation is supported. Default: `false` |
+| `evidence_repository` | string | OPTIONAL | URL of the evidence repository API (see [wmp-evidence.md](wmp-evidence.md) §6) |
+| `evidence_retention` | string | OPTIONAL | ISO 8601 duration for evidence retention (e.g., `P10Y`) |
+| `scheduled_delivery` | boolean | OPTIONAL | Whether `deliver_after` (scheduled delivery) is supported. Default: `false` |
+
+**Relay routing behavior:** Before forwarding a message to a downstream ERDS, a relay SHOULD fetch or cache the downstream's `erds` metadata from its well-known configuration and verify that:
+
+1. The requested `consignment_mode` (§3.5) is in `consignment_modes`.
+2. The requested `recipient_assurance_level` (§3.5.1) is in `assurance_levels`.
+3. All `applicable_policies` from the message (§3.4) are in `supported_policies`.
+
+If any check fails, the relay MUST reject the message with error `-31005` and `data` indicating the unsupported capability.
+
+#### 7.5.1.2 Recipient Capability Metadata (`recipient_metadata`)
+
+The `recipient_metadata` object publishes the endpoint's preferences as a *recipient* of messages. This enables senders to tailor messages and avoid delivery failures.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `accepted_content_types` | string[] | OPTIONAL | MIME types the recipient can process |
+| `max_message_size` | integer | OPTIONAL | Maximum message body size in bytes |
+| `consignment_preferences` | string | OPTIONAL | Preferred consignment mode (`basic`, `consented`, `consented_signed`). Senders SHOULD respect this unless their policy requires a different mode. |
+| `encryption_required` | boolean | OPTIONAL | Whether MLS encryption is mandatory for incoming messages. Default: `false` |
+
+> **Design rationale:** The `erds` and `recipient_metadata` objects correspond to the ETSI EN 319 522 Common Service Interface (CSI) — specifically, ERDS capabilities (EN 319 522-3 §6.3.2) and recipient capabilities (EN 319 522-3 §6.3.1). Publishing these in the well-known configuration allows pre-session compatibility checks without requiring a separate CSI protocol.
 
 > **Design rationale:** Discovery is intentionally decoupled from trust mechanisms. A participant's WMP endpoint is found via well-known configuration regardless of whether they participate in OpenID Federation, eIDAS trust lists, or any other trust framework. Trust is established *after* connection via `identity_assertions` and `trust_hints`.
 
