@@ -1,0 +1,190 @@
+[
+  {
+    "id": "interop-echo-resolve",
+    "description": "A resolve request with a deterministic echo handler returns matching metadata in both implementations.",
+    "conformance_level": "interop",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "interop-001",
+      "method": "wmp.resolve",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-interop-001"
+        },
+        "type": "vctm",
+        "uri": "https://interop.example.com/credential"
+      }
+    },
+    "handler_action": {
+      "method": "wmp.resolve",
+      "return": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-interop-001"
+        },
+        "type": "vctm",
+        "uri": "https://interop.example.com/credential",
+        "metadata": {
+          "source": "echo"
+        }
+      }
+    },
+    "expected_response": {
+      "jsonrpc": "2.0",
+      "id": "interop-001",
+      "result": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-interop-001"
+        },
+        "type": "vctm",
+        "uri": "https://interop.example.com/credential",
+        "metadata": {
+          "source": "echo"
+        }
+      }
+    },
+    "notes": "Both implementations must preserve the input id and echo the handler result."
+  },
+  {
+    "id": "interop-method-not-found",
+    "description": "An unknown method returns a MethodNotFound JSON-RPC error.",
+    "conformance_level": "interop",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "interop-002",
+      "method": "wmp.unknown.method",
+      "params": {
+        "wmp": {
+          "version": "0.1"
+        }
+      }
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "interop-002",
+      "error": {
+        "code": -32601,
+        "message": "Method not found"
+      }
+    },
+    "notes": "Error message may vary; code must match."
+  },
+  {
+    "id": "interop-notification-no-response",
+    "description": "A notification with no registered handler produces no JSON-RPC response.",
+    "conformance_level": "interop",
+    "input": {
+      "jsonrpc": "2.0",
+      "method": "wmp.message.deliver",
+      "params": {
+        "wmp": {
+          "version": "0.1",
+          "session_id": "ses-interop-003"
+        },
+        "to": ["x509:san:dns:bob.example.com"],
+        "ciphertext": "dGVzdC1jaXBoZXJ0ZXh0"
+      }
+    },
+    "expected_response": null,
+    "notes": "Notifications must not generate a response, even when there is no handler."
+  },
+  {
+    "id": "interop-auth-reject",
+    "description": "An authorizer hook that rejects a request produces a NotAuthorized error.",
+    "conformance_level": "interop",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "interop-004",
+      "method": "wmp.resolve",
+      "params": {
+        "wmp": {
+          "version": "0.1"
+        },
+        "type": "vctm",
+        "uri": "https://denied.example.com/credential"
+      }
+    },
+    "peer_options": {
+      "authorize": false
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "interop-004",
+      "error": {
+        "code": -31002,
+        "message": "Not authorized"
+      }
+    },
+    "notes": "Error message may vary; code must match."
+  },
+  {
+    "id": "interop-validation-reject",
+    "description": "A validator hook that rejects params produces an InvalidParams error.",
+    "conformance_level": "interop",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "interop-005",
+      "method": "wmp.resolve",
+      "params": {
+        "wmp": {
+          "version": "0.1"
+        },
+        "type": "vctm",
+        "uri": "https://invalid.example.com/credential"
+      }
+    },
+    "peer_options": {
+      "validate": false
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "interop-005",
+      "error": {
+        "code": -32602,
+        "message": "Invalid params"
+      }
+    },
+    "notes": "Error message may vary; code must match."
+  },
+  {
+    "id": "interop-handler-error",
+    "description": "A handler that throws a WMP error produces a matching error response.",
+    "conformance_level": "interop",
+    "input": {
+      "jsonrpc": "2.0",
+      "id": "interop-006",
+      "method": "wmp.resolve",
+      "params": {
+        "wmp": {
+          "version": "0.1"
+        },
+        "type": "vctm",
+        "uri": "https://error.example.com/credential"
+      }
+    },
+    "handler_action": {
+      "method": "wmp.resolve",
+      "error": {
+        "code": -31005,
+        "message": "Resolution type not supported",
+        "data": {
+          "type": "vctm"
+        }
+      }
+    },
+    "expected_error": {
+      "jsonrpc": "2.0",
+      "id": "interop-006",
+      "error": {
+        "code": -31005,
+        "message": "Resolution type not supported",
+        "data": {
+          "type": "vctm"
+        }
+      }
+    },
+    "notes": "Both implementations must preserve the WMP error code and data."
+  }
+]
