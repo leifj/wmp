@@ -9,11 +9,29 @@
     "description": { "type": "string" },
     "conformance_level": {
       "type": "string",
-      "enum": ["basic", "secure", "flows", "agent", "registered", "wallet"]
+      "enum": ["basic", "secure", "flows", "agent", "registered", "wallet", "interop"]
     },
     "input": { "description": "The JSON-RPC message to send." },
-    "expected_response": { "description": "The expected JSON-RPC response (if request)." },
+    "expected_response": { "description": "The expected JSON-RPC response (if request). Use null to assert no response is produced (e.g. notifications)." },
     "expected_error": { "$ref": "../schema/wmp-error.json", "description": "Expected error response." },
+    "handler_action": {
+      "type": "object",
+      "description": "Instruction for the test harness handler. Used only in interop tests.",
+      "required": ["method"],
+      "properties": {
+        "method": { "type": "string" },
+        "return": { "description": "Value to return from the handler." },
+        "error": { "description": "JSON-RPC error object to return from the handler." }
+      }
+    },
+    "peer_options": {
+      "type": "object",
+      "description": "Peer-level configuration for the test harness. Used only in interop tests.",
+      "properties": {
+        "authorize": { "type": "boolean", "description": "If false, the authorizer hook rejects the request." },
+        "validate": { "type": "boolean", "description": "If false, the validator hook rejects the params." }
+      }
+    },
     "notes": { "type": "string" }
   }
 }
