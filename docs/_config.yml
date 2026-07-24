@@ -2,8 +2,8 @@ title: Wallet Messaging Protocol
 description: >-
   A multi-party messaging protocol built on JSON-RPC 2.0 and MLS for
   wallet-to-wallet, human-to-agent, and human-to-organization communication.
-url: https://leifj.github.io
-baseurl: /wmp
+url: https://wmp.name
+baseurl: ""
 
 repo_url: https://github.com/leifj/wmp
 schema_url: https://github.com/leifj/wmp/tree/main/schema
