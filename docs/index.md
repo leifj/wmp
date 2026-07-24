@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # WMP — Wallet Messaging Protocol
 
 A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420), designed for wallet-to-wallet, human-to-agent, and human-to-organization communication.

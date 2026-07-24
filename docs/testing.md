@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # WMP Interop Testing Guide
 
 ## Wallet Messaging Protocol — Manual Interop Testing with Reference Tools
