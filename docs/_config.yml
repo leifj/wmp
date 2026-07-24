@@ -1,0 +1,23 @@
+title: WMP — Wallet Messaging Protocol
+description: >-
+  WMP is a multi-party messaging protocol built on JSON-RPC 2.0 and MLS,
+  designed for wallet-to-wallet, human-to-agent, and human-to-organization
+  communication.
+baseurl: "/wmp"
+url: "https://leifj.github.io"
+
+remote_theme: pages-themes/cayman@v0.2.0
+plugins:
+  - jekyll-remote-theme
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: true
+
+markdown: kramdown
+highlighter: rouge
+
+header_pages:
+  - index.md
+  - testing.md
