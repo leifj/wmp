@@ -12,7 +12,6 @@ Project website: https://leifj.github.io/wmp
 | [spec/wmp-transport.md](spec/wmp-transport.md) | Transport bindings: WebSocket, HTTPS, native messaging |
 | [spec/wmp-mls.md](spec/wmp-mls.md) | MLS encryption layer: group management, key distribution |
 | [spec/wmp-usecases.md](spec/wmp-usecases.md) | Use cases: wallet migration, H2H, H2A, H2O flows |
-| [Testing guide](https://leifj.github.io/wmp/testing) | Manual interop testing with wmp-cli, wmp-inspector, and httpsse-relay |
 
 ### Profiles
 
