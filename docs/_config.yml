@@ -1,23 +1,51 @@
-title: WMP — Wallet Messaging Protocol
+title: Wallet Messaging Protocol
 description: >-
-  WMP is a multi-party messaging protocol built on JSON-RPC 2.0 and MLS,
-  designed for wallet-to-wallet, human-to-agent, and human-to-organization
-  communication.
-baseurl: "/wmp"
-url: "https://leifj.github.io"
+  A multi-party messaging protocol built on JSON-RPC 2.0 and MLS for
+  wallet-to-wallet, human-to-agent, and human-to-organization communication.
+url: https://leifj.github.io
+baseurl: /wmp
 
-remote_theme: pages-themes/cayman@v0.2.0
+repo_url: https://github.com/leifj/wmp
+schema_url: https://github.com/leifj/wmp/tree/main/schema
+vectors_url: https://github.com/leifj/wmp/tree/main/vectors
+
+# We do NOT use the cayman remote theme — custom layouts + SCSS.
 plugins:
-  - jekyll-remote-theme
-  - jekyll-relative-links
-
-relative_links:
-  enabled: true
-  collections: true
+  - jekyll-seo-tag
 
 markdown: kramdown
-highlighter: rouge
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  hard_wrap: false
 
-header_pages:
-  - index.md
-  - testing.md
+collections:
+  specs:
+    output: true
+    permalink: /spec/:path/
+
+defaults:
+  - scope: { path: "", type: "specs" }
+    values:
+      layout: spec
+
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+  - .github
+
+# Ordered spec catalog rendered on the landing page.
+spec_catalog:
+  - { title: "Core protocol",       slug: "wmp-core",             description: "Message format, sessions, flows, error codes." }
+  - { title: "Transport bindings",  slug: "wmp-transport",        description: "WebSocket, HTTPS, and native messaging bindings." }
+  - { title: "MLS encryption",      slug: "wmp-mls",              description: "Group management and key distribution over MLS (RFC 9420)." }
+  - { title: "Use cases",           slug: "wmp-usecases",         description: "Wallet migration, human-to-human, agent, and organization flows." }
+  - { title: "Invitations",         slug: "wmp-invitation",       description: "Out-of-band session bootstrapping via invitation URIs." }
+  - { title: "WebAuthn binding",    slug: "wmp-webauthn-binding", description: "FIDO2 passkey provider model for wallet-mediated authentication." }
+
+extension_catalog:
+  - { title: "OpenID4VCI / VP",           slug: "wmp-openid4x" }
+  - { title: "Delivery evidence (ERDS)",  slug: "wmp-evidence" }
+  - { title: "eDelivery / AS4",           slug: "wmp-edelivery" }

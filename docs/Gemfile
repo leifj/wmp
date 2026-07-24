@@ -1,4 +1,8 @@
 source "https://rubygems.org"
 
 gem "github-pages", group: :jekyll_plugins
-gem "jekyll-remote-theme"
+gem "jekyll-seo-tag", group: :jekyll_plugins
+
+# Windows / JRuby portability shims (harmless elsewhere).
+gem "tzinfo-data", platforms: [:mingw, :x64_mingw, :mswin, :jruby]
+gem "wdm", "~> 0.1.1", platforms: [:mingw, :x64_mingw, :mswin]

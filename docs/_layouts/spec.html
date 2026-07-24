@@ -1,0 +1,27 @@
+---
+layout: default
+---
+<section class="hero hero--compact">
+  <div class="hero__grid" aria-hidden="true"></div>
+  <div class="container hero__inner">
+    <div class="eyebrow"><span class="eyebrow__bar"></span>Specification</div>
+    <h1>{{ page.title }}</h1>
+    {% if page.description %}<p class="lede">{{ page.description }}</p>{% endif %}
+    <div class="hero__meta mono">
+      <a href="{{ site.repo_url }}/blob/main/spec/{{ page.slug | default: page.name }}" target="_blank" rel="noopener">
+        View source on GitHub →
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container container--reading">
+    <article class="wmp-prose">
+      {{ content }}
+    </article>
+    <div class="back-home">
+      <a href="{{ '/' | relative_url }}">← Back to overview</a>
+    </div>
+  </div>
+</section>

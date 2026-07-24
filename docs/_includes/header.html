@@ -1,0 +1,16 @@
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a class="brand" href="{{ '/' | relative_url }}">
+      {% include mark.svg %}
+      <span class="brand__short">WMP</span>
+      <span class="brand__long">Wallet Messaging Protocol</span>
+    </a>
+    <nav class="site-nav">
+      <a href="{{ '/#core-specification' | relative_url }}">Core specification</a>
+      <a href="{{ '/testing/' | relative_url }}">Testing</a>
+      <a class="btn btn--ghost btn--sm" href="{{ site.repo_url }}" target="_blank" rel="noopener">
+        {% include github-icon.svg %} GitHub
+      </a>
+    </nav>
+  </div>
+</header>
