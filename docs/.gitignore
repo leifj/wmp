@@ -1,6 +1,7 @@
-_site
-.sass-cache
-.jekyll-cache
+# Auto-generated at build time by .github/workflows/pages.yml
+_specs/
+_site/
+.jekyll-cache/
 .jekyll-metadata
 Gemfile.lock
-vendor
+vendor/

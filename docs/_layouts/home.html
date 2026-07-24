@@ -1,0 +1,76 @@
+---
+layout: default
+---
+<section class="hero">
+  <div class="hero__grid" aria-hidden="true"></div>
+  <div class="container hero__inner">
+    <h1>Wallet Messaging Protocol</h1>
+    <p class="lede">
+      WMP is a multi-party messaging protocol built on JSON-RPC 2.0 and MLS (RFC 9420),
+      designed for wallet-to-wallet, human-to-agent, and human-to-organization communication.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary" href="#core-specification">Read the core specification <span class="arrow">→</span></a>
+      <a class="btn btn--ghost" href="{{ '/testing/' | relative_url }}">Interop testing guide <span class="arrow">→</span></a>
+      <a class="btn btn--ghost" href="{{ site.repo_url }}" target="_blank" rel="noopener">
+        {% include github-icon.svg %} View on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<section id="core-specification" class="section">
+  <div class="container">
+    <div class="section__head">
+      <div class="eyebrow"><span class="eyebrow__bar"></span>Core specification</div>
+      <h2>The full draft, split by concern.</h2>
+    </div>
+
+    <div class="spec-grid">
+      {% for spec in site.spec_catalog %}
+        <a class="spec-card" href="{{ '/spec/' | append: spec.slug | append: '/' | relative_url }}">
+          <div>
+            <div class="spec-card__file mono">spec / {{ spec.slug }}.md</div>
+            <h3 class="spec-card__title">{{ spec.title }}</h3>
+            <p class="spec-card__desc">{{ spec.description }}</p>
+          </div>
+          <div class="spec-card__read">Read <span class="arrow">→</span></div>
+        </a>
+      {% endfor %}
+    </div>
+
+    <div class="extensions">
+      <div class="extensions__label">Extensions</div>
+      <div class="extensions__list">
+        {% for ext in site.extension_catalog %}
+          <a class="chip" href="{{ '/spec/' | append: ext.slug | append: '/' | relative_url }}">
+            <span class="chip__tag mono">Extension</span>{{ ext.title }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section--surface">
+  <div class="container">
+    <div class="artifact-grid">
+      <a class="artifact-card" href="{{ site.schema_url }}" target="_blank" rel="noopener">
+        <div>
+          <div class="badge mono">JSON Schema · Draft 2020-12</div>
+          <h3>Schemas</h3>
+          <p>Machine-readable definitions for every message type, all fourteen methods, and metadata objects. Validate implementations against the source of truth.</p>
+        </div>
+        <div class="artifact-card__read">Browse schemas <span class="arrow">→</span></div>
+      </a>
+      <a class="artifact-card" href="{{ site.vectors_url }}" target="_blank" rel="noopener">
+        <div>
+          <div class="badge mono">Conformance vectors</div>
+          <h3>Test vectors</h3>
+          <p>Cross-implementation input/output pairs used by go-wmp and wmp-js. Session lifecycle, encryption, error paths, and interop conformance levels.</p>
+        </div>
+        <div class="artifact-card__read">Browse vectors <span class="arrow">→</span></div>
+      </a>
+    </div>
+  </div>
+</section>
