@@ -118,7 +118,7 @@ a:hover .arrow { transform: translateX(2px); }
 .hero h1 {
   max-width: 48rem;
   margin: 0;
-  font-size: clamp(2.25rem, 4vw + 1rem, 3.75rem);
+  font-size: clamp(2.25rem, calc(4vw + 1rem), 3.75rem);
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.1;
@@ -154,7 +154,7 @@ a:hover .arrow { transform: translateX(2px); }
 .section__head { max-width: 42rem; }
 .section__head h2 {
   margin: 0.75rem 0 0;
-  font-size: clamp(1.875rem, 2vw + 1rem, 2.5rem);
+  font-size: clamp(1.875rem, calc(2vw + 1rem), 2.5rem);
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.2;
