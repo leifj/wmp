@@ -190,22 +190,23 @@ Inviter                        Relay                        Invitee
    │                             │  3. Parse & verify invitation
    │                             │     Extract provider domain │
    │                             │     Fetch well-known config │
-   │                             │<── GET /.well-known/wmp-*  ─│
+   │                             │                             │
+   │                             │<── GET /.well-known/wmp-* ──│
    │                             │──> {endpoints, relay, ...} ─│
    │                             │                             │
    │                             │  4. Connect to relay        │
    │                             │<── wmp.relay.register ──────│
    │                             │                             │
    │                             │  5. Create session          │
-   │  wmp.session.create  <──────│<── wmp.session.create ──────│
-   │  (invitation_nonce matches) │    {invitation_nonce: "..."} │
+   │  wmp.session.create <───────│<── wmp.session.create ──────│
+   │  (invitation_nonce matches) │    {invitation_nonce: "..."}│
    │                             │                             │
    │ 6. Validate nonce           │                             │
    │    Consume nonce            │                             │
    │    Return session_id        │                             │
    │  ──> result {session_id} ───│──> result {session_id} ────>│
    │                             │                             │
-   │ 7. Session established      │        Session established  │
+   │ 7. Session established      │      Session established    │
 ```
 
 ### 4.2 Step-by-Step
@@ -309,12 +310,12 @@ Existing Member          Relay            New Participant
       │ 2. Share URI ──────────────────────────>│
       │                    │                    │
       │                    │  3-4. Connect      │
-      │                    │<── relay.register ─│
+      │                    │<── relay.register ──│
       │                    │                    │
       │                    │  5. session.create │
-      │  session.create <──│<── session.create ─│
-      │  {invitation_nonce,│   {invitation_nonce│
-      │   session_id}      │    session_id}     │
+      │ session.create <───│<── session.create ──│
+      │ {invitation_nonce, │   {invitation_nonce│
+      │  session_id}       │    session_id}     │
       │                    │                    │
       │ 6. Validate nonce  │                    │
       │    Add to MLS group│                    │
