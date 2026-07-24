@@ -1414,7 +1414,7 @@ Initiator                         Responder
     │<─── wmp.flow.progress ──────────│
     │<─── wmp.flow.complete ──────────│  (terminal)
     │                                 │
-    │  ── OR (abnormal termination) ──
+    │  ── OR (abnormal termination) ──│
     │                                 │
     │<─── wmp.flow.error ─────────────│  (terminal)
     │──── wmp.flow.cancel ───────────>│  (terminal)

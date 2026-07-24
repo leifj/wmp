@@ -384,37 +384,37 @@ wallet                             orchestrator
 ## 5. Complete OID4VP Flow Example
 
 ```
-verifier-agent                     user-wallet
-      │                                │
-      │── wmp.session.create ─────────>│
-      │   {capabilities_offered:       │
-      │     {oid4vp: {...},            │
+verifier-agent                   user-wallet
+      │                              │
+      │── wmp.session.create ───────>│
+      │   {capabilities_offered:     │
+      │     {oid4vp: {...},          │
       │      flows: {max_concurrent: 1}}}
-      │<── result ─────────────────────│
-      │                                │
-      │── wmp.flow.start ────────────>│
-      │   {flow_type: "oid4vp",        │
-      │    params: {                   │
-      │      presentation_definition:  │
-      │        {input_descriptors:     │
-      │          [{id: "id_card",      │
-      │            constraints: {...}}]│
-      │        }}}                     │
-      │                                │
-      │<── wmp.flow.progress ──────────│
-      │   {step: "awaiting_consent",   │
-      │    payload: {matched_creds}}   │
-      │                                │
-      │   (user reviews and consents)  │
-      │                                │
-      │<── wmp.flow.action ────────────│
+      │<── result ───────────────────│
+      │                              │
+      │── wmp.flow.start ───────────>│
+      │   {flow_type: "oid4vp",      │
+      │    params: {                 │
+      │      presentation_definition:│
+      │        {input_descriptors:   │
+      │          [{id: "id_card",    │
+      │            constraints:      │
+      │             {...}}]}}}       │
+      │                              │
+      │<── wmp.flow.progress ────────│
+      │   {step: "awaiting_consent", │
+      │    payload: {matched_creds}} │
+      │                              │
+      │   (user reviews and consents)│
+      │                              │
+      │<── wmp.flow.action ──────────│
       │   {action: "select_credentials",
-      │    params: {selections: [...], │
-      │             consent: true}}    │
-      │                                │
-      │<── wmp.flow.complete ──────────│
-      │   {result: {vp_token: "..."}}  │
-      │                                │
+      │    params: {selections: [...],│
+      │             consent: true}}  │
+      │                              │
+      │<── wmp.flow.complete ────────│
+      │   {result: {vp_token: "..."}}│
+      │                              │
 ```
 
 ## 6. Security Considerations

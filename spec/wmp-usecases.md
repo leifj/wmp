@@ -23,27 +23,27 @@ Alice wants to message Bob. Both have wallets managed by wallet providers. Alice
 ```
 Alice's Wallet          Relay           Bob's Wallet
       │                   │                   │
-      │── wmp.session.create ──>│              │
-      │   {participants:        │              │
-      │    ["did:key:z6Mkf..."]}│              │
+      │── wmp.session.create ──>│             │
+      │   {participants:        │             │
+      │    ["did:key:z6Mkf..."]}│             │
       │                   │                   │
-      │   (relay fetches Bob's KeyPackage)     │
+      │   (relay fetches Bob's KeyPackage)    │
       │                   │                   │
-      │── wmp.mls.group.create ─>│             │
-      │   {welcomes: {bob: ...}} │             │
+      │── wmp.mls.group.create ─>│            │
+      │   {welcomes: {bob: ...}}│             │
       │                   │                   │
       │                   │── notification ──>│
-      │                   │   {new session}    │
+      │                   │   {new session}   │
       │                   │                   │
-      │                   │<── wmp.mls.group.join │
+      │                   │<── wmp.mls.group.join
       │                   │                   │
-      │── wmp.message.deliver ──>│             │
-      │   {encrypted, body:      │             │
-      │    "Hello Bob!"}         │──────────>│
+      │── wmp.message.deliver ──>│            │
+      │   {encrypted, body:      │            │
+      │    "Hello Bob!"}         │───────────>│
       │                   │                   │
-      │                   │<── wmp.message.deliver │
-      │<──────────────────│   {encrypted,      │
-      │                   │    body: "Hi!"}    │
+      │                   │<── wmp.message.deliver
+      │<──────────────────│   {encrypted,     │
+      │                   │    body: "Hi!"}   │
       │                   │                   │
 ```
 
@@ -121,17 +121,17 @@ An agent can request credentials from a human user:
 ```
 Agent                   Relay            User's Wallet
   │                       │                    │
-  │── wmp.flow.start ────>│──────────────────>│
-  │   {flow_type: "oid4vp",                   │
-  │    request: {                              │
-  │      presentation_definition: {...}}}      │
+  │── wmp.flow.start ────>│───────────────────>│
+  │   {flow_type: "oid4vp",                    │
+  │    request: {                               │
+  │      presentation_definition: {...}}}       │
   │                       │                    │
   │                       │<── wmp.flow.action │
   │                       │   {action: "consent",
-  │<──────────────────────│    params: {        │
-  │                       │     approved: true}}│
+  │<──────────────────────│    params: {       │
+  │                       │     approved: true}│
   │                       │                    │
-  │                       │<── wmp.flow.complete│
+  │                       │<── wmp.flow.complete
   │<──────────────────────│   {vp_token: "..."}│
   │                       │                    │
 ```
@@ -149,17 +149,17 @@ User's Wallet           Org's WMP Endpoint
       │                        │
       │── wmp.session.create ─>│
       │   {capabilities:       │
-      │    ["oid4vci"]}        │
+      │    ["oid4vci"]}         │
       │<── result ─────────────│
       │                        │
       │── wmp.flow.start ────>│
-      │   {flow_type: "oid4vci",
+      │   {flow_type: "oid4vci",│
       │    params: {offer_uri}} │
       │                        │
       │   ... (standard OID4VCI flow over WMP) ...
       │                        │
       │<── wmp.flow.complete ──│
-      │   {credentials: [...]}  │
+      │   {credentials: [...]} │
       │                        │
 ```
 
@@ -223,16 +223,16 @@ A verifier requests a presentation, and the holder involves a trusted third part
 ```
 Verifier          Relay          Holder          Guardian
    │                │              │                │
-   │── flow.start ──>│─────────>│                │
+   │── flow.start ──>│─────────────>│                │
    │   (oid4vp)      │              │                │
    │                │              │── session.create ─>│
-   │                │              │   (invite guardian) │
+   │                │              │   (invite guardian)│
    │                │              │                │
    │                │              │<── message ────│
-   │                │              │   "I approve"   │
+   │                │              │   "I approve"  │
    │                │              │                │
-   │                │<── flow.action │               │
-   │<───────────────│   (consent)    │               │
+   │                │<── flow.action │              │
+   │<───────────────│   (consent)   │               │
    │                │              │                │
    │<── flow.complete│             │                │
    │   {vp_token}    │              │                │

@@ -250,9 +250,12 @@ WMP supports three connection topologies. The topology determines who initiates 
 Both parties are network-reachable. The initiator opens a transport connection directly to the responder's endpoint (discovered via `/.well-known/wmp-configuration`).
 
 ```
-   Initiator ──────────────────> Responder
-   (connects outbound to        (listens on advertised
-    responder's endpoint)        WMP endpoint)
+   Initiator                 Responder
+      │                         │
+      └────────────────────────>│
+   (connects outbound      (listens on advertised
+    to responder's          WMP endpoint)
+    endpoint)
 ```
 
 **When to use:** Server-to-server, wallet-to-backend (e.g., OID4VCI flows where the wallet connects to the issuer), or any scenario where the responder has a publicly-reachable endpoint.
@@ -264,8 +267,10 @@ Both parties are network-reachable. The initiator opens a transport connection d
 One or both parties cannot accept inbound connections (mobile apps, browser extensions, NATed devices). Both parties connect **outbound** to a shared relay.
 
 ```
-   Initiator ───────> Relay <─────── Responder
-   (outbound WS)              (outbound WS)
+   Initiator             Relay             Responder
+      │                   │                   │
+      └──────────────────>│<──────────────────┘
+   (outbound WS)        (relays)         (outbound WS)
 ```
 
 **When to use:** Wallet-to-wallet communication, mobile-to-mobile, any scenario where at least one party cannot be directly reached.
@@ -307,9 +312,12 @@ Inter-relay routing uses standard WMP transport (one relay connects to the other
 The initiator connects directly to the responder's endpoint, but the responder delivers messages to third parties via relay:
 
 ```
-Wallet ────────> Backend ────────> Relay <──── Other Wallet
-(direct to       (processes         (relays to
- backend)        and forwards)      third party)
+   Wallet            Backend            Relay         Other Wallet
+     │                  │                 │                │
+     └─────────────────>│                 │                │
+                        └────────────────>│<───────────────┘
+   (direct to      (processes and    (relays to
+    backend)        forwards)         third party)
 ```
 
 **When to use:** Wallet-to-backend-to-wallet flows (e.g., an issuer backend orchestrating credential issuance, then routing a message to another wallet).
