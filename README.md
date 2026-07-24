@@ -2,7 +2,7 @@
 
 A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420), designed for wallet-to-wallet, human-to-agent, and human-to-organization communication.
 
-Project website: https://leifj.github.io/wmp
+Project website: https://wmp.name
 
 ## Specification
 
@@ -13,7 +13,7 @@ Project website: https://leifj.github.io/wmp
 | [spec/wmp-mls.md](spec/wmp-mls.md) | MLS encryption layer: group management, key distribution |
 | [spec/wmp-usecases.md](spec/wmp-usecases.md) | Use cases: wallet migration, H2H, H2A, H2O flows |
 
-### Profiles
+### Extensions
 
 | Profile | Description |
 |---------|-------------|
