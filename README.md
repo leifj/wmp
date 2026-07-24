@@ -2,7 +2,7 @@
 
 A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420), designed for wallet-to-wallet, human-to-agent, and human-to-organization communication.
 
-Project website: [https://leifj.github.io/wmp]
+Project website: https://leifj.github.io/wmp
 
 ## Specification
 
