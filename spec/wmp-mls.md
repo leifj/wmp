@@ -225,6 +225,7 @@ The following fields are encrypted (inside the MLS ciphertext):
 - `content_type`
 - `body`
 - Any other content fields in `params` (flow data, action params, etc.)
+- `salt` (when the sender uses the plaintext commitment of [wmp-core.md](wmp-core.md) §5.2.1)
 - For responses: `result` or `error`
 
 The following fields remain in plaintext (in the outer JSON-RPC envelope, for routing):
@@ -236,6 +237,7 @@ The following fields remain in plaintext (in the outer JSON-RPC envelope, for ro
 - `wmp.encrypted`
 - `wmp.epoch`
 - `wmp.sender`
+- `plaintext_hash` (optional salted commitment to the plaintext, [wmp-core.md](wmp-core.md) §5.2.1) — it must stay outside the ciphertext so that relays and evidence generators can cover it with their signatures and hashes
 
 ## 5. Delivery Service
 
@@ -331,6 +333,8 @@ MLS provides forward secrecy at the epoch boundary. Frequent key updates reduce 
 ### 7.4 Metadata Privacy
 
 The `wmp` metadata (session ID, sender, timestamp) is visible to the relay. Implementations concerned with metadata privacy SHOULD use anonymous session IDs and minimize metadata exposure.
+
+The optional `plaintext_hash` field ([wmp-core.md](wmp-core.md) §5.2.1) is also visible to the relay. It is salted with at least 128 bits of fresh randomness carried inside the ciphertext, so it does not let a relay confirm a guessed plaintext. Senders MUST NOT omit or reuse the salt.
 
 ## 8. Post-Quantum Cryptography
 
