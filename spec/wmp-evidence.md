@@ -253,6 +253,8 @@ The `original_content_hash` uses the same canonicalization as non-repudiation si
 
 Supported algorithms: `sha-256` (REQUIRED), `sha-384`, `sha-512`.
 
+The hash input is the content object as defined in [wmp-core.md](wmp-core.md) §5.4 — `params` minus `wmp` for requests — JCS-canonicalized and UTF-8 encoded. When the original message was MLS-encrypted (`wmp.encrypted: true`), the content object is `{"ciphertext": "<base64url MLSMessage>"}` and the hash binds to the ciphertext as transmitted. This is the only form an evidence generator acting as MLS Delivery Service can compute, since it never holds the plaintext; both endpoints can recompute it from the ciphertext they sent or received. Note that MLS ciphertext is specific to one transmission, so a party holding only the decrypted plaintext cannot recompute `original_content_hash` without the ciphertext.
+
 ### 4.4 Signature Requirements
 
 When the `evidence` capability is active:

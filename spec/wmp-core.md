@@ -966,6 +966,8 @@ The signed payload `M` is constructed as follows:
 1. **Extract the content object.** For requests: take the `params` JSON object and remove the `wmp` key — the remaining key/value pairs form the content object. For responses: take the `result` or `error` JSON object as-is.
 2. **Canonicalize.** Apply JCS (RFC 8785) to the content object. This produces a deterministic UTF-8 byte string `M`.
 
+**Encrypted messages.** When `wmp.encrypted` is `true` (§5.2), the same extraction rule applies to the outer envelope: `params` minus `wmp` is exactly `{"ciphertext": "<base64url MLSMessage>"}`, and that single-key object is the content object. The signature therefore binds to the ciphertext as transmitted, not to the decrypted plaintext fields. This is deliberate — it lets relays and evidence generators (see [wmp-evidence.md](wmp-evidence.md) §4.3) verify the signature and compute content hashes without access to the plaintext. Signers MUST NOT sign the plaintext content object when `encrypted` is `true`.
+
 **JCS compliance requirements:**
 
 Implementations MUST use a canonicalization library that is fully compliant with RFC 8785 and passes the RFC 8785 test suite (Appendix B of that RFC). In addition:
