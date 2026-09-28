@@ -70,6 +70,7 @@ The `evidence` capability MUST be negotiated during session creation.
 | `retention_period` | string | OPTIONAL | ISO 8601 duration for evidence retention (default: `P5Y`) |
 | `signing_algorithm` | string | OPTIONAL | Algorithm for evidence signatures (default: `ES256`) |
 | `timestamp_authority` | string | OPTIONAL | RFC 3161 TSA endpoint for evidence timestamps |
+| `require_plaintext_hash` | boolean | OPTIONAL | When `true`, MLS-encrypted submissions MUST carry the `plaintext_hash` commitment of [wmp-core.md](wmp-core.md) §5.2.1. Submissions without it are rejected with `submission_rejected`, reason `plaintext_hash_missing`. Default: `false`. See §8.6. |
 
 ## 3. Evidence Event Types
 
@@ -239,6 +240,8 @@ The `event_reason` object records why an event occurred, particularly for reject
 | `timeout` | `delivery_expired`, `retrieval_timeout`, `acceptance_expired` | Operation timed out |
 | `system_error` | Any failure event | Internal system error |
 | `delegation_invalid` | `submission_rejected`, `delivery_failed` | Delegate authorization invalid or expired |
+| `plaintext_hash_missing` | `submission_rejected` | Encrypted submission lacks the `plaintext_hash` required by `require_plaintext_hash` (§2) |
+| `plaintext_hash_mismatch` | `delivery_failed` | Recipient rejected the message with `-31019`: decrypted plaintext did not match the sender's commitment |
 
 ### 4.3 Content Hash
 
@@ -253,7 +256,7 @@ The `original_content_hash` uses the same canonicalization as non-repudiation si
 
 Supported algorithms: `sha-256` (REQUIRED), `sha-384`, `sha-512`.
 
-The hash input is the content object as defined in [wmp-core.md](wmp-core.md) §5.4 — `params` minus `wmp` for requests — JCS-canonicalized and UTF-8 encoded. When the original message was MLS-encrypted (`wmp.encrypted: true`), the content object is `{"ciphertext": "<base64url MLSMessage>"}` and the hash binds to the ciphertext as transmitted. This is the only form an evidence generator acting as MLS Delivery Service can compute, since it never holds the plaintext; both endpoints can recompute it from the ciphertext they sent or received. Note that MLS ciphertext is specific to one transmission, so a party holding only the decrypted plaintext cannot recompute `original_content_hash` without the ciphertext.
+The hash input is the content object as defined in [wmp-core.md](wmp-core.md) §5.4 — `params` minus `wmp` for requests — JCS-canonicalized and UTF-8 encoded. When the original message was MLS-encrypted (`wmp.encrypted: true`), the content object is `{"ciphertext": "<base64url MLSMessage>"}` and the hash binds to the ciphertext as transmitted. This is the only form an evidence generator acting as MLS Delivery Service can compute, since it never holds the plaintext; both endpoints can recompute it from the ciphertext they sent or received. Note that MLS ciphertext is specific to one transmission, so a party holding only the decrypted plaintext cannot recompute `original_content_hash` without the ciphertext. Senders that need the evidence to be demonstrably about a specific plaintext include the `plaintext_hash` commitment of [wmp-core.md](wmp-core.md) §5.2.1 in the envelope. It then forms part of the content object, is covered by `original_content_hash`, and lets a third party link plaintext to evidence with no MLS key material (§8.6).
 
 ### 4.4 Signature Requirements
 
@@ -439,6 +442,7 @@ Evidence generators MUST use keys bound to verifiable identities (X.509 certific
 A sender cannot repudiate submission if:
 - The relay provides a `submission_accepted` evidence with a valid signature and trusted timestamp
 - The evidence includes the `original_content_hash` matching the submitted message
+- For a dispute about *what* was sent rather than *that* something was sent over MLS, the submitted envelope carried `plaintext_hash` (§8.6)
 
 A recipient cannot repudiate receipt if:
 - The relay provides a `delivery_confirmed` or `retrieval_confirmed` evidence
@@ -458,6 +462,20 @@ Evidence signatures must remain verifiable for the retention period. Considerati
 - Re-timestamp evidence with fresh algorithms before old algorithms are deprecated
 - Archive the full X.509 certificate chains used for verification
 
+### 8.6 Plaintext Binding
+
+For MLS-encrypted messages, `original_content_hash` covers the content object `{ciphertext, plaintext_hash?}` (§4.3). Evidence therefore proves that a specific ciphertext was submitted, relayed, delivered, or retrieved. It does not by itself prove what that ciphertext decrypts to. Both endpoints can recompute the hash from the ciphertext they hold, but a third party — an auditor, a court, a counterparty in a dispute — holding a decrypted copy has no way to connect it to the evidence without the MLS group key, which is ephemeral by design.
+
+The `plaintext_hash` commitment of [wmp-core.md](wmp-core.md) §5.2.1 closes this gap. When present it is part of the content object, so `original_content_hash` transitively commits to the plaintext, and the sender's non-repudiation signature covers the commitment. A third party then verifies plaintext → `plaintext_hash` → content object → `original_content_hash` → evidence signature, with no key material beyond the sender's and the evidence generator's public keys ([wmp-core.md](wmp-core.md) §5.2.1, *Third-party verification*).
+
+Evidence generators:
+- MUST NOT attempt to verify `plaintext_hash`. As MLS Delivery Service they hold no plaintext; the commitment is verified by the recipient on decryption.
+- MUST include `plaintext_hash` unchanged in the content object they hash. It is not `wmp` metadata and MUST NOT be stripped.
+- MAY require it by negotiating `require_plaintext_hash: true` (§2). An encrypted submission without it is then rejected with `submission_rejected`, reason `plaintext_hash_missing`.
+- SHOULD, on learning that a recipient rejected a message with `-31019`, record `delivery_failed` with reason `plaintext_hash_mismatch`. A mismatch is a sender-side inconsistency, not a transport failure, and the evidence chain should say so.
+
+The salt inside the plaintext (at least 16 bytes, fresh per message) is what makes this safe to expose to relays. Without it, evidence generators and relays could confirm guesses about low-entropy content. Profiles that mandate `plaintext_hash` inherit that requirement and MUST NOT relax it.
+
 ## 9. Conformance
 
 ### 9.1 WMP Evidence Conformance
@@ -470,6 +488,7 @@ An implementation conforms to the WMP Evidence profile if it:
 4. Includes RFC 3161 timestamps on all evidence notifications
 5. Delivers evidence to the original sender
 6. Acknowledges received evidence
+7. Where `require_plaintext_hash` is negotiated, rejects MLS-encrypted submissions that lack `plaintext_hash` (§8.6)
 
 ### 9.2 ERDS Conformance
 

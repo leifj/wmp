@@ -28,6 +28,20 @@
         "ciphertext": {
           "type": "string",
           "description": "Base64url-encoded MLS MLSMessage (when encrypted)."
+        },
+        "salt": {
+          "type": "string",
+          "description": "Base64url-encoded random salt of at least 16 bytes. Part of the plaintext content object when the sender uses the plaintext commitment (wmp-core §5.2.1); never appears in the outer envelope of an encrypted message."
+        },
+        "plaintext_hash": {
+          "type": "object",
+          "description": "Salted commitment to the plaintext content object (wmp-core §5.2.1). Only permitted when wmp.encrypted is true.",
+          "required": ["algorithm", "value"],
+          "properties": {
+            "algorithm": { "type": "string", "enum": ["sha-256", "sha-384", "sha-512"] },
+            "value": { "type": "string", "description": "Base64url-encoded (no padding) hash of UTF8(JCS(plaintext content object))." }
+          },
+          "additionalProperties": false
         }
       }
     }

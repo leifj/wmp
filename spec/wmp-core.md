@@ -355,6 +355,7 @@ WMP extends the standard JSON-RPC 2.0 error code space:
 | -31016 | Consignment mode unsupported | Requested consignment mode not supported by the recipient's ERDS |
 | -31017 | Assurance level unsupported | Requested recipient assurance level cannot be met |
 | -31018 | Policy unsupported | One or more applicable policies cannot be enforced |
+| -31019 | Plaintext hash mismatch | Decrypted plaintext does not match the sender's `plaintext_hash` commitment (§5.2.1) |
 
 ## 4. Session Lifecycle
 
@@ -850,6 +851,73 @@ When MLS is active, the message content is encrypted inside the JSON-RPC envelop
 
 The `wmp` metadata (version, session_id, sender, encrypted, epoch) remains in plaintext for routing — relays need these fields to forward messages without access to the encrypted content. See [wmp-mls.md](wmp-mls.md) Section 4 for full details.
 
+#### 5.2.1 Plaintext Commitment
+
+Every signature and hash computed outside the MLS group — the sender's non-repudiation signature (§5.4), relay provenance (§5.7), and evidence content hashes ([wmp-evidence.md](wmp-evidence.md) §4.3) — binds to the ciphertext as transmitted. MLS ciphertext is specific to one transmission and one epoch. A party that later holds only the decrypted plaintext therefore cannot show a third party that the plaintext is what those artefacts attest to, short of producing the ciphertext *and* the group key that opens it.
+
+The `plaintext_hash` field closes this gap. It is a sender-asserted, salted commitment to the plaintext content object, carried in the outer envelope as a sibling of `ciphertext`. Because it sits outside `wmp`, it is part of the §5.4 content object and is covered by the sender's signature, by every relay-chain hash, and by every evidence `original_content_hash` — without exposing the plaintext to relays.
+
+**Envelope field:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `plaintext_hash` | object | OPTIONAL | Commitment to the plaintext content object. Fields: `algorithm` (`sha-256` REQUIRED to support; `sha-384`, `sha-512` OPTIONAL) and `value` (base64url, no padding). MUST only be present when `wmp.encrypted` is `true`. |
+
+**Construction (sender):**
+
+1. Build the plaintext content object as in §5.2 step 1 and add a `salt` field: a base64url-encoded (no padding) random value of at least 16 bytes, freshly generated for each message.
+2. Compute `plaintext_hash.value` = BASE64URL(HASH(UTF8(JCS(plaintext content object)))), where HASH is the algorithm named in `plaintext_hash.algorithm` and JCS is applied under the same rules as §5.4.
+3. Encrypt the plaintext content object — `salt` included — per §5.2 steps 2–3.
+4. Place `plaintext_hash` in `params` as a sibling of `ciphertext` (or in `result` for an encrypted response).
+5. If signing per §5.4, sign as usual. The content object is now `{"ciphertext": ..., "plaintext_hash": {...}}`, so the signature covers the commitment.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "wmp.message.deliver",
+  "params": {
+    "wmp": {
+      "version": "0.1",
+      "session_id": "ses-a1b2c3d4",
+      "sender": "x509:san:dns:alice.example.com",
+      "encrypted": true,
+      "epoch": 3,
+      "signature": "<detached JWS over {ciphertext, plaintext_hash}>"
+    },
+    "ciphertext": "<base64url-encoded MLS MLSMessage>",
+    "plaintext_hash": {
+      "algorithm": "sha-256",
+      "value": "<base64url-encoded hash of JCS(plaintext content object)>"
+    }
+  }
+}
+```
+
+The `salt` is required because the plaintext content object may have low entropy — a short body, a fixed content type, a small set of plausible recipients. Without it a relay could confirm a guessed plaintext by hashing the guess. With it, `plaintext_hash` reveals nothing about the plaintext to anyone who cannot decrypt the ciphertext. Recipients hash the decrypted object exactly as received, `salt` included; they MUST NOT strip or reorder anything before canonicalization.
+
+**Verification (recipient):**
+
+After decrypting per §5.2, a recipient that finds `plaintext_hash` in the envelope MUST:
+
+1. Compute HASH(UTF8(JCS(decrypted plaintext content object))) using `plaintext_hash.algorithm`.
+2. Compare the result to `plaintext_hash.value`.
+3. On mismatch, reject the message with `-31019` (Plaintext hash mismatch) and MUST NOT acknowledge it (§5.3). A mismatch means the sender committed to something other than what the recipient can decrypt; acknowledging would let the evidence chain attest to content the sender can later disown.
+
+A recipient MUST reject with `-32602` (Invalid params) a message that carries `plaintext_hash` while `wmp.encrypted` is absent or `false`, or whose `plaintext_hash.algorithm` it does not support.
+
+Relays MUST forward `plaintext_hash` unchanged. It is part of the content object; any modification invalidates the sender's signature and every relay-chain entry (§5.7).
+
+**Third-party verification.** A verifier presented with (a) a plaintext content object, (b) the outer content object `{ciphertext, plaintext_hash}` together with its `wmp.signature`, and (c) an evidence record can establish that the evidence attests to that plaintext without any MLS key material:
+
+1. HASH(UTF8(JCS(a))) equals `plaintext_hash.value`.
+2. The §5.4 signature over (b) verifies under the sender's key.
+3. HASH(UTF8(JCS(b))) equals the evidence record's `original_content_hash.value`.
+4. The evidence signature and timestamp token verify per [wmp-evidence.md](wmp-evidence.md) §8.1.
+
+Parties that intend to rely on this chain MUST retain the outer content object and `wmp.signature` alongside the plaintext for as long as they retain the evidence.
+
+**Negotiation.** `plaintext_hash` needs no capability of its own. It is an ordinary content-object field: a recipient that does not implement this section ignores it, and the §5.4 extraction rule covers it regardless. Profiles MAY require it; the evidence profile defines a `require_plaintext_hash` capability parameter for that purpose ([wmp-evidence.md](wmp-evidence.md) §2).
+
 ### 5.3 Message Acknowledgment
 
 Recipients MAY acknowledge message receipt:
@@ -966,7 +1034,7 @@ The signed payload `M` is constructed as follows:
 1. **Extract the content object.** For requests: take the `params` JSON object and remove the `wmp` key — the remaining key/value pairs form the content object. For responses: take the `result` or `error` JSON object as-is.
 2. **Canonicalize.** Apply JCS (RFC 8785) to the content object. This produces a deterministic UTF-8 byte string `M`.
 
-**Encrypted messages.** When `wmp.encrypted` is `true` (§5.2), the same extraction rule applies to the outer envelope: `params` minus `wmp` is exactly `{"ciphertext": "<base64url MLSMessage>"}`, and that single-key object is the content object. The signature therefore binds to the ciphertext as transmitted, not to the decrypted plaintext fields. This is deliberate — it lets relays and evidence generators (see [wmp-evidence.md](wmp-evidence.md) §4.3) verify the signature and compute content hashes without access to the plaintext. Signers MUST NOT sign the plaintext content object when `encrypted` is `true`.
+**Encrypted messages.** When `wmp.encrypted` is `true` (§5.2), the same extraction rule applies to the outer envelope: `params` minus `wmp` is `{"ciphertext": "<base64url MLSMessage>"}` — plus `plaintext_hash` when the sender includes the plaintext commitment of §5.2.1 — and that object is the content object. The signature therefore binds to the ciphertext as transmitted, not to the decrypted plaintext fields. This is deliberate — it lets relays and evidence generators (see [wmp-evidence.md](wmp-evidence.md) §4.3) verify the signature and compute content hashes without access to the plaintext. Signers MUST NOT sign the plaintext content object when `encrypted` is `true`.
 
 **JCS compliance requirements:**
 
@@ -2145,6 +2213,8 @@ Authorization is session-scoped. The session creator defines allowed participant
 ### 8.4 End-to-End Encryption
 
 When the negotiated security mode is `mls` or `mls-optional`, message confidentiality and authenticity are guaranteed independently of transport security. See [wmp-mls.md](wmp-mls.md) for details.
+
+MLS authenticates plaintext only to group members. Signatures and hashes produced outside the group bind to ciphertext. Where a third party must later be able to tie evidence to a specific plaintext, senders include the salted `plaintext_hash` commitment of §5.2.1.
 
 In `mls-optional` mode, the `encrypted_capabilities` list determines which capabilities require MLS encryption. A message for a capability listed in `encrypted_capabilities` that arrives without MLS encryption MUST be rejected with error `-31003` (Encryption required). Messages for unlisted capabilities are protected by transport-level TLS only.
 
