@@ -20,6 +20,7 @@ Project website: https://wmp.name
 | [spec/wmp-openid4x.md](spec/wmp-openid4x.md) | OID4VCI and OID4VP flow definitions |
 | [spec/wmp-evidence.md](spec/wmp-evidence.md) | Delivery evidence and receipts for registered delivery (ERDS) |
 | [spec/wmp-edelivery.md](spec/wmp-edelivery.md) | eDelivery integration: SMP/BDXL discovery, ebCore identifiers, AS4 coexistence |
+| [spec/wmp-ebw-profile.md](spec/wmp-ebw-profile.md) | European Business Wallet (EBW) Secure Communication Channel conformance profile |
 
 ## Status
 
