@@ -26,6 +26,7 @@ This profile defines the following capabilities for use in `wmp.session.create` 
 |-----------|-------------|------------|
 | `oid4vci` | OID4VCI credential issuance flows | `supported_grants`: grant types, `supported_formats`: credential formats |
 | `oid4vp` | OID4VP verifiable presentation flows | `supported_response_modes`: response modes, `supported_formats`: credential formats |
+| `transaction_data` | OID4VP `transaction_data` processing (EC TS12 payment SCA) | `versions`: capability versions, `hash_algs`: hash algorithms |
 
 Implementations that need VCTM resolution SHOULD also negotiate the `resolve` capability (WMP Core Section 5.8) with `"vctm"` in `supported_types`.
 
@@ -74,6 +75,35 @@ Implementations that need VCTM resolution SHOULD also negotiate the `resolve` ca
   }
 }
 ```
+
+### 2.3 `transaction_data` Capability
+
+A wallet offers `transaction_data` when it can process OID4VP `transaction_data` end to end: validate it against the type metadata of the attestation it is bound to, show it to the user, and bind it into the presentation. EC TS12 (strong customer authentication for payments) requires this for a presentation of an SCA attestation.
+
+**Parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `versions` | integer[] | REQUIRED | Versions of this capability the wallet implements. Version `1` is defined by this section and Section 3.2.5. A non-empty array. |
+| `hash_algs` | string[] | OPTIONAL | `transaction_data_hashes_alg` names the wallet can compute, for example `sha-256`. |
+
+**Example:**
+
+```json
+{
+  "transaction_data": {
+    "versions": [1],
+    "hash_algs": ["sha-256"]
+  }
+}
+```
+
+**Rules:**
+
+- A wallet MUST offer the capability only if it implements everything Section 3.2.5 requires of it. An implementation that ignores `transaction_data` would sign the presentation without the transaction hashes and without the user seeing the transaction.
+- An orchestrator MUST NOT send `transaction_data` to a wallet whose **offered** capabilities (`capabilities_offered` in `wmp.session.create`) do not list a version it supports. The test is on what the wallet offered, not on the negotiated result: negotiation may fall back to all of the orchestrator's capabilities when a wallet offers none, and that is not evidence that the wallet supports anything.
+- When a request carries `transaction_data` and the wallet did not offer the capability, the orchestrator MUST end the OID4VP flow with `wmp.flow.error` code `-31005` (Capability not supported) and `data` `{"unsupported": "transaction_data"}`, and MUST report the failure to the verifier as `invalid_transaction_data` (OID4VP). It MUST NOT omit the transaction data and continue.
+- A wallet that does not offer the capability behaves exactly as before for every request that carries no `transaction_data`.
 
 ## 3. Flow Types
 
@@ -322,6 +352,72 @@ The `oid4vp` flow is a *verifier-initiated* credential query: the verifier speci
 | `presentation_submission` | object | Presentation submission descriptor |
 | `response_code` | string | Response code from verifier (if applicable) |
 
+#### 3.2.5 Presentation Sign Sub-flow
+
+To obtain the VP token the orchestrator starts a nested `sign` flow with `action` `sign_presentation`, linked to the `oid4vp` flow by `parent_flow_id`, as for the OID4VCI sign sub-flow in Section 3.1.5. This section defines the members relevant to `transaction_data`; other members are defined by the implementation profile.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | string | REQUIRED | `sign_presentation` |
+| `nonce` | string | REQUIRED | The verifier's `nonce` |
+| `audience` | string | REQUIRED | The verifier's client identifier |
+| `parent_flow_id` | string | REQUIRED | The `oid4vp` flow this sub-flow belongs to |
+| `response_mode` | string | OPTIONAL | The `response_mode` of the verifier's request. Required for a request that carries `transaction_data` (EC TS12 puts it in the key binding JWT). |
+| `credentials_to_include` | object[] | OPTIONAL | Credentials already selected: `credential_id`, `credential_query_id`, `disclosed_claims` |
+| `transaction_data` | object[] | OPTIONAL | The request's transaction data, one entry per element of the verifier's array, in the verifier's order. Only present for a wallet that offered the `transaction_data` capability. |
+
+Each `transaction_data` entry has these members:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `raw` | string | REQUIRED | The entry exactly as the verifier sent it: the base64url string from the request's `transaction_data` array |
+| `type` | string | REQUIRED | `type` of the decoded entry |
+| `credential_ids` | string[] | REQUIRED | `credential_ids` of the decoded entry: the DCQL credential query ids the entry is bound to |
+| `payload` | object | OPTIONAL | `payload` of the decoded entry (EC TS12 Section 4.2) |
+| `transaction_data_hashes_alg` | string[] | OPTIONAL | The verifier's list of acceptable hash algorithms for this entry. An **array**, as in OID4VP; a bare string SHOULD be accepted from older peers. |
+
+**Example:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "vp-sign-001",
+  "method": "wmp.flow.start",
+  "params": {
+    "wmp": {"version": "0.1", "session_id": "ses-a1b2c3d4"},
+    "flow_type": "sign",
+    "flow_id": "flow-vp-001-sign",
+    "params": {
+      "action": "sign_presentation",
+      "nonce": "bUtJdjJESWdmTWNjb011YQ",
+      "audience": "x509_san_dns:shop.example.com",
+      "parent_flow_id": "flow-vp-001",
+      "response_mode": "direct_post",
+      "credentials_to_include": [
+        {"credential_id": "cred-001", "credential_query_id": "pay"}
+      ],
+      "transaction_data": [
+        {
+          "raw": "eyJ0eXBlIjoidXJuOmV1ZGk6c2NhOnBheW1lbnQ6MSIsImNyZWRlbnRpYWxfaWRzIjpbInBheSJdLCJwYXlsb2FkIjp7InRyYW5zYWN0aW9uX2lkIjoidHgtMDAwMSJ9fQ",
+          "type": "urn:eudi:sca:payment:1",
+          "credential_ids": ["pay"],
+          "payload": {"transaction_id": "tx-0001"}
+        }
+      ]
+    }
+  }
+}
+```
+
+**Requirements on the wallet:**
+
+1. **Hash `raw`.** `transaction_data_hashes` in the key binding JWT is the base64url encoding of the hash of the ASCII bytes of `raw`, exactly as received. The wallet MUST NOT decode `raw` before hashing and MUST NOT hash a re-serialization of the decoded members (key order, whitespace, character escapes and number formatting do not survive it). Entries are hashed in the order given. When the verifier gave `transaction_data_hashes_alg` the wallet uses one of the listed algorithms and puts that single name, as a string, in the key binding JWT's `transaction_data_hashes_alg`; otherwise it uses `sha-256`.
+2. **Do not trust the decoded members.** The wallet MUST decode `raw` itself, and use that, not `type`, `credential_ids` or `payload` as sent, to validate and to display. The other members are an aid, and a wallet MUST refuse an entry whose members disagree with what `raw` decodes to. Otherwise a compromised orchestrator could show one transaction and bind another.
+3. **Fail closed.** The wallet MUST fail the sub-flow, and show the user why, if it cannot validate an entry, cannot compute a requested hash, or does not support an entry's `type`. OID4VP requires an error for even one unrecognized transaction data type. It MUST NOT answer with a presentation that omits the hashes.
+4. **Format.** EC TS12 version 1.0.1 covers SD-JWT VC only. For another credential format the wallet MUST fail the sub-flow rather than present without binding the transaction.
+
+The sub-flow completes with the VP token as in Section 3.1.5. The wallet is responsible for the remaining requirements of EC TS12 (display of the transaction, the `amr` claim, `jti`, logging); they are not carried in this protocol.
+
 ## 4. Complete OID4VCI Flow Example
 
 ```
@@ -438,9 +534,14 @@ Implementations MUST validate credential offers before processing:
 - Resolve and validate issuer metadata
 - Check credential types against known VCTMs
 
+### 6.5 Transaction Data
+
+`transaction_data` makes the user's consent legally significant (a payment authorization), so the display and the hash must describe the same bytes. Section 3.2.5 therefore has the wallet derive what it shows from `raw`, which is also what it hashes, and treat everything else the orchestrator sends as untrusted. Capability negotiation (Section 2.3) keeps the data away from wallets that would drop it silently; the orchestrator's refusal is the only barrier for those, so it MUST NOT be skipped for unauthenticated or "best effort" flows.
+
 ## References
 
 - [WMP Core Specification](wmp-core.md)
 - [OpenID for Verifiable Credential Issuance 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)
 - [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
 - [Verifiable Credential Type Metadata](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-05.html)
+- [EC TS12: Specification of Strong Customer Authentication (SCA) Implementation with the Wallet, v1.0.1](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts12-electronic-payments-SCA-implementation-with-wallet.md)
