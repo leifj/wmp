@@ -4,6 +4,10 @@ A multi-party messaging protocol built on **JSON-RPC 2.0** and **MLS** (RFC 9420
 
 Project website: https://wmp.name
 
+## IPR
+
+This specification is currently owned and maintained by SIROS Foundation. SIROS Foundation is comitted to handing over the wmp specifications to a suitable standards body as soon as possible and at that time these specifications will adopt that SDOs IPR scheme. In the meantime we welcome contributions and suggestions.
+
 ## Specification
 
 | Document | Description |
