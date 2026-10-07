@@ -6,7 +6,7 @@ Project website: https://wmp.name
 
 ## IPR
 
-This specification is currently owned and maintained by SIROS Foundation. SIROS Foundation is comitted to handing over the wmp specifications to a suitable standards body as soon as possible and at that time these specifications will adopt that SDOs IPR scheme. In the meantime we welcome contributions and suggestions.
+This specification is currently owned and maintained by SIROS Foundation. SIROS Foundation is comitted to handing over the wmp specifications to a suitable standards body as soon as possible and at that time these specifications will adopt the IPR scheme(s) in use by the SDO or SDOs. In the meantime we welcome contributions and suggestions.
 
 ## Specification
 
